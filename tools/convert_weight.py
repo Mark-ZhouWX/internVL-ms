@@ -31,26 +31,22 @@ def read_json(path):
 
 def name_replace(name: str):
     """replace hf param name to ms."""
-    name = name.replace('embed_tokens.weight', 'tok_embeddings.embedding_weight')
-    name = name.replace('.self_attn.q_proj.', '.attention.wq.')
-    name = name.replace('.self_attn.k_proj.', '.attention.wk.')
-    name = name.replace('.self_attn.v_proj.', '.attention.wv.')
-    name = name.replace('.self_attn.o_proj.', '.attention.wo.')
-    name = name.replace('.mlp.gate_proj.', '.feed_forward.w1.')
-    name = name.replace('.mlp.down_proj.', '.feed_forward.w2.')
-    name = name.replace('.mlp.up_proj.', '.feed_forward.w3.')
-    name = name.replace('.input_layernorm.', '.attention_norm.')
-    name = name.replace('.post_attention_layernorm.', '.ffn_norm.')
-    name = name.replace('.norm.', '.norm_out.')
+    name = name.replace('language_model.model.tok_embeddings.weight', 'transformer.wte.embedding_weight')
+    name = name.replace('language_model.model', 'transformer')
+    name = name.replace('language_model.output', 'lm_head')
+
     return name
 
 
-def convert_hf_ckpt(ckpt_dir, output_name, dtype=ms.float16):
+def convert_hf_ckpt(ckpt_dir, output_path, dtype=ms.float16):
     """convert hf weight to ms."""
     print(f"Trying to convert huggingface checkpoint in '{ckpt_dir}'.", flush=True)
     try:
-        from transformers import AutoModelForCausalLM
-        model_hf = AutoModelForCausalLM.from_pretrained(ckpt_dir, trust_remote_code=True)
+        from transformers import AutoModel
+        model_hf = AutoModel.from_pretrained(
+            ckpt_dir,
+            low_cpu_mem_usage=True,
+            trust_remote_code=True)
     # pylint: disable=W0703
     except Exception as e:
         print(f"Do not find huggingface checkpoint in '{ckpt_dir}', Error {e}.", flush=True)
@@ -58,24 +54,22 @@ def convert_hf_ckpt(ckpt_dir, output_name, dtype=ms.float16):
 
     ckpt_list = []
     for name, value in model_hf.named_parameters():
+        torch_name = name
+        if not name.startswith("language_model"):
+            continue
         name = name_replace(name)
-        if name == 'norm.weight':
-            name = 'norm_out.weight'
-        if name[:7] == 'layers.':
-            name = name[7:]
         value = value.detach().numpy()
         print(f'\rprocessing parameter: {name} {value.shape}     ', end='', flush=True)
         ckpt_list.append({'name': name, 'data': ms.Tensor(value, dtype=dtype)})
 
-    ckpt_file = os.path.join(ckpt_dir, output_name)
-    ms.save_checkpoint(ckpt_list, os.path.join(ckpt_file))
-    print(f"\rConvert huggingface checkpoint finished, the mindspore checkpoint is saved in '{ckpt_file}'.", flush=True)
+    ms.save_checkpoint(ckpt_list, output_path)
+    print(f"\rConvert huggingface checkpoint finished, the mindspore checkpoint is saved in '{output_path}'.", flush=True)
     return True
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--torch_ckpt_dir', default='./internlm-chat/')
-    parser.add_argument('--mindspore_ckpt_path', default='./internlm-chat.ckpt')
+    parser.add_argument('--torch_ckpt_dir', default='/home/zhouwuxing/huggingface_download/models--OpenGVLab--Mini-InternVL-Chat-2B-V1-5/')
+    parser.add_argument('--mindspore_ckpt_path', default='./MiniInternLM2Chat2B/internlm2.ckpt')
     args = parser.parse_args()
-    convert_hf_ckpt(ckpt_dir=args.torch_ckpt_dir, output_name=args.mindspore_ckpt_path)
+    convert_hf_ckpt(ckpt_dir=args.torch_ckpt_dir, output_path=args.mindspore_ckpt_path)

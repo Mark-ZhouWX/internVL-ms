@@ -76,7 +76,8 @@ class InternLM2Model(BaseLLMModel):
                 rotary_dtype=config.rotary_dtype,
                 param_init_type=config.param_init_type,
                 ln_param_init_type=config.ln_param_init_type,
-                qkv_has_bias=True,
+                qkv_has_bias=config.qkv_has_bias,
+                qkv_concat=config.qkv_concat,
                 use_past=config.use_past,
                 use_flash_attention=config.use_flash_attention,
             )
@@ -107,8 +108,8 @@ class InternLM2Model(BaseLLMModel):
             use_kvcache_op=config.use_kvcache_op,
             is_flexible_shape=config.is_flexible_shape,
         )
-        # 5. ln_f
-        self.ln_f = LlamaRMSNorm(
+        # 5. final norm
+        self.norm = LlamaRMSNorm(
             self.embed_dim,
             eps=config.rms_norm_eps,
             compute_type=config.layernorm_compute_type,
@@ -161,8 +162,8 @@ class InternLM2Model(BaseLLMModel):
         for i in range(self.num_hidden_layers):
             hidden_states = self.layers[i](hidden_states, freqs_cis, mask, kvcache_inputs=kvcache_inputs)
 
-        # 5. ln_f
-        hidden_states = self.ln_f(hidden_states)
+        # 5. final norm
+        hidden_states = self.norm(hidden_states)
 
         return hidden_states
 

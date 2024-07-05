@@ -432,8 +432,10 @@ class GeneratorMixin:
                 input_mask[i][valid_length_each_example[i] - 1] = 1
 
                 # Stop judgment
+                if isinstance(generation_config.eos_token_id, int):
+                    generation_config.eos_token_id = [generation_config.eos_token_id]
                 if (
-                    p_args[i][target_index] == generation_config.eos_token_id
+                    p_args[i][target_index] in generation_config.eos_token_id
                     or valid_length_each_example[i] == generation_config.max_length
                 ):
                     is_finished[i] = True

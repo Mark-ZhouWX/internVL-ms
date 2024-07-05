@@ -5,6 +5,7 @@ from mindspore import nn
 from mindspore.train.serialization import load_checkpoint, load_param_into_net
 
 from ..generation import GeneratorMixin
+# from mindformers.generation.text_generator import GenerationMixin
 from .builder import build_llm_model
 from .configs import BaseConfig, LLMConfig
 

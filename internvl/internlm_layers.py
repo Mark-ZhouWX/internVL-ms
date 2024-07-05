@@ -325,17 +325,19 @@ class LlamaRMSNorm(nn.Cell):
         self.compute_type = compute_type
         self.weight = Parameter(initializer("ones", (dim,), dtype=param_init_type), parallel_optimizer=False)
 
-        if ms.get_context("device_target") == "Ascend" and not is_910a() and not is_dynamic:
-            self.norm = ops.RmsNorm(eps)
+        self.cast = ops.Cast()
+        self.mul = ops.Mul()
+        self.mul2 = ops.Mul()
+        self.square = ops.Square()
+        self.mean = ops.ReduceMean(keep_dims=True)
+        self.add = ops.Add()
+        self.rsqrt = ops.Rsqrt()
+        self.norm = ops.RmsNorm(eps)
+
+        if False and ms.get_context("device_target") == "Ascend" and not is_910a() and not is_dynamic:
+
             self.rms_norm = self._rms_norm
         else:
-            self.cast = ops.Cast()
-            self.mul = ops.Mul()
-            self.mul2 = ops.Mul()
-            self.square = ops.Square()
-            self.mean = ops.ReduceMean(keep_dims=True)
-            self.add = ops.Add()
-            self.rsqrt = ops.Rsqrt()
             self.rms_norm = self._self_norm
 
     def _self_norm(self, x):
@@ -548,7 +550,7 @@ class LLamaAttention(nn.Cell):
 
         self.apply_rotary_emb = LlamaRotaryEmbedding(self.head_dim, rotary_dtype, use_rope_slice=use_rope_slice)
         if self.qkv_concat:
-            self.w = Linear(
+            self.wqkv = Linear(
                 in_channels=self.hidden_size,
                 out_channels=self.hidden_size + self.kv_dim * 2,
                 has_bias=qkv_has_bias,
@@ -614,12 +616,16 @@ class LLamaAttention(nn.Cell):
         if self.qkv_concat:
             x = self.reshape(x, (-1, x.shape[-1]))
             bs_seq = x.shape[0]
-            qkv = self.cast(self.w(x), self.dtype)
-            query = self.slice_qkv(qkv, (0, 0), (bs_seq, self.hidden_size), (1, 1))
-            key = self.slice_qkv(qkv, (0, self.hidden_size), (bs_seq, self.hidden_size + self.kv_dim), (1, 1))
-            value = self.slice_qkv(
-                qkv, (0, self.hidden_size + self.kv_dim), (bs_seq, self.hidden_size + self.kv_dim * 2), (1, 1)
-            )
+            qkv = self.cast(self.wqkv(x), self.dtype)
+
+            qkv = self.reshape(qkv, (bs, seq_len, self.n_kv_head, self.n_rep + 2, self.head_dim))
+            query = self.slice_qkv(qkv, (0, 0, 0, 0, 0), (bs, seq_len, self.n_kv_head, self.n_rep, self.head_dim), (1, 1, 1, 1, 1))
+            key = self.slice_qkv(qkv, (0, 0, 0, self.n_rep, 0), (bs, seq_len, self.n_kv_head, self.n_rep + 1, self.head_dim), (1, 1, 1, 1, 1))
+            value = self.slice_qkv(qkv, (0, 0, 0, self.n_rep + 1, 0), (bs, seq_len, self.n_kv_head, self.n_rep + 2, self.head_dim), (1, 1, 1, 1, 1))
+
+            query = self.reshape(query, (bs_seq, -1))
+            key = self.reshape(key, (bs_seq, -1))
+            value = self.reshape(value, (bs_seq, -1))
         else:
             query = self.cast(self.wq(x), self.dtype)  # dp, 1 -> dp, mp
             key = self.cast(self.wk(x), self.dtype)  # dp, 1 -> dp, mp
