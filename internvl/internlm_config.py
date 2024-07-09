@@ -1,3 +1,4 @@
+from internvl.intern_vit_config import InternVisionConfig
 from internvl.llm.configs import convert_mstype, BaseConfig
 
 
@@ -97,3 +98,21 @@ class InternLM2Config(BaseConfig):
         self.use_paged_attention = use_paged_attention
         self.block_size = block_size
         self.num_blocks = num_blocks
+
+
+class InternVLChatConfig(BaseConfig):
+    def __init__(self,
+                 vision_model,
+                 llm_model,
+                 downsample_ratio,
+                 template = "internlm2-chat",
+
+                 **kwargs):
+        super().__init__(**kwargs)
+        assert vision_model is not None
+        assert llm_model is not None
+
+        self.vision_config = InternVisionConfig(**vision_model)
+        self.llm_config = InternLM2Config(**llm_model)
+        self.downsample_ratio = downsample_ratio
+        self.template = template

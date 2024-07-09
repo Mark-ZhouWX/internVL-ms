@@ -31,7 +31,7 @@ class InternLM2Model(BaseLLMModel):
     """transformer"""
 
     def __init__(self, config):
-        config = InternLM2Config(**config)
+        # config = InternLM2Config(**config)
         super().__init__(config)
         self.dtype = config.compute_dtype
         self.vocab_size = config.vocab_size
@@ -49,6 +49,9 @@ class InternLM2Model(BaseLLMModel):
 
         self.is_first_iteration = True
         self.use_flash_attention = config.use_flash_attention
+
+        self.num_patches = 7 * 256
+        self.image_start_token_pos = 26
 
         # 1. wte
         self.wte = LlamaEmbedding(
@@ -119,7 +122,8 @@ class InternLM2Model(BaseLLMModel):
         self.shape = ops.Shape()
 
     def construct(
-        self, input_ids: Tensor, init_reset=True, batch_valid_length=None, batch_index=None, zactivate_len=None
+        self, input_ids: Tensor, init_reset=True, batch_valid_length=None, batch_index=None, zactivate_len=None,
+            image_features=None,
     ):
         """construct"""
         if input_ids is not None:
@@ -127,7 +131,30 @@ class InternLM2Model(BaseLLMModel):
             input_ids = input_ids.view(-1, input_shape[-1])
 
         # 1. wte
-        hidden_states = self.wte(input_ids)
+        inputs_embeds = self.wte(input_ids)
+
+        if self.is_first_iteration and image_features is not None:
+            bs, seq_len = self.shape(input_ids)
+
+            new_input_embeds = []
+            for i in range(bs):
+                cur_input_embeds = inputs_embeds[i]
+                per_cur_image_features = image_features[i]
+                assert per_cur_image_features.shape[0] == self.num_patches
+                cur_input_embeds = ops.cat(
+                    (
+                        cur_input_embeds[: self.image_start_token_pos],
+                        per_cur_image_features,
+                        cur_input_embeds[self.image_start_token_pos + self.num_patches:],
+                    ),
+                    axis=0,
+                )
+
+                new_input_embeds.append(cur_input_embeds)
+
+            hidden_states = ops.stack(new_input_embeds, axis=0)
+        else:
+            hidden_states = inputs_embeds
 
         # 2. drop
         hidden_states = self.drop(hidden_states)
@@ -211,6 +238,7 @@ class InternLM2CausalLM(BaseLLMModel):
     def prepare_inputs_for_generation(self, input_ids, **kwargs):
         return {
             "input_ids": Tensor(input_ids, mstype.int32),
+            "image_features": kwargs.get("image_features")
         }
 
     def construct(
@@ -225,6 +253,7 @@ class InternLM2CausalLM(BaseLLMModel):
         batch_valid_length=None,
         batch_index=None,
         zactivate_len=None,
+        image_features=None,
     ):
         bsz, seqlen = input_ids.shape
         if self.use_past:
@@ -246,6 +275,7 @@ class InternLM2CausalLM(BaseLLMModel):
             batch_valid_length=batch_valid_length,
             batch_index=batch_index,
             zactivate_len=zactivate_len,
+            image_features=image_features,
         )
         pre_gather = (not self.use_past or self.is_first_iteration) and batch_valid_length is not None
         if pre_gather:

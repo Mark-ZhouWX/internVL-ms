@@ -18,7 +18,7 @@ if __name__ == "__main__":
 
     with open(config_path) as stream:
         data = yaml.safe_load(stream)
-    intern_config = InternLM2Config(**data['llm_model']) # model_ckpt in data
+    intern_config = InternLM2Config(**data['model']['llm_model']) # model_ckpt in data
     model = InternLM2CausalLM(intern_config)
     model.load_checkpoint(intern_config)
     # tokenizer = InternLM2Tokenizer(**data['processor']['tokenizer'])

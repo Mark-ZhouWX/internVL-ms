@@ -2,42 +2,53 @@ tokenizer:
   name: InternLM2Tokenizer
   vocab_file: "./MiniInternLM2Chat2B/tokenizer.model"
 
-llm_model:
-  name: InternLM2CausalLM
-  batch_size: 1
-  seq_length: 8192
-  hidden_size: 2048
-  num_layers: 24
-  num_heads: 16
-  n_kv_heads: 8
-  qkv_concat: true
-  vocab_size: 92553
-  max_position_embedding: 32768
-  theta: 1000000
-  scaling_factor: 3.0
-  intermediate_size: 8192
-  rms_norm_eps: 1.0e-5
-  emb_dropout_prob: 0.0
-  eos_token_id: [2, 92542]
-#  eos_token_id: 2
-  pad_token_id: 2
-  compute_dtype: "float16"
-  layernorm_compute_type: "float32"
-  softmax_compute_type: "float16"
-  rotary_dtype: "float16"
-  param_init_type: "float16"
-  ln_param_init_type: "float16"
-  use_past: True
-  use_flash_attention: False
-  use_past_shard: False
-  offset: 0
-  checkpoint_name_or_path: "./MiniInternLM2Chat2B/internlm2.ckpt"
-  repetition_penalty: 1.0
-  max_decode_length: 2048
-  top_k: 50
-  top_p: 1.0
-  do_sample: False
-  max_new_tokens: 1024
-  temperature: 1.0
-  num_beams: 1
+model:
+  checkpoint_name_or_path: "./MiniInternLM2Chat2B/mini-internvl-chat-2b.ckpt"
+  downsample_ratio: 0.5
+  template: internlm2-chat
 
+  llm_model:
+    name: InternLM2CausalLM
+    batch_size: 1
+    seq_length: 8192
+    hidden_size: 2048
+    num_layers: 24
+    num_heads: 16
+    n_kv_heads: 8
+    qkv_concat: true
+    vocab_size: 92553
+    max_position_embedding: 32768
+    theta: 1000000
+    scaling_factor: 3.0
+    intermediate_size: 8192
+    rms_norm_eps: 1.0e-5
+    emb_dropout_prob: 0.0
+    eos_token_id: 92542
+  #  eos_token_id: 2
+    pad_token_id: 2
+    compute_dtype: "float16"
+    layernorm_compute_type: "float32"
+    softmax_compute_type: "float16"
+    rotary_dtype: "float16"
+    param_init_type: "float16"  # llama embedding type
+    ln_param_init_type: "float16"
+    use_past: True
+    use_flash_attention: False
+    use_past_shard: False
+    offset: 0
+    checkpoint_name_or_path: "./MiniInternLM2Chat2B/internlm2.ckpt"
+    repetition_penalty: 1.0
+    max_decode_length: 2048
+    top_k: 50
+    top_p: 1.0
+    do_sample: False
+    max_new_tokens: 1024
+    temperature: 1.0
+    num_beams: 1
+
+  vision_model:
+    hidden_size: 1024
+    image_size: 448
+    patch_size: 14
+    compute_dtype: float16
+    to_add_more:
