@@ -75,7 +75,7 @@ class InternVLChat(BaseLLMModel):
         bs, num_patch, channel, h, w = pixel_values.shape  # (1, 7, 3, 448, 448)
         pixel_values = pixel_values.reshape(bs*num_patch, channel, h, w)
 
-        vit_embeds = self.vision_model(pixel_values=pixel_values) # (7, 1025, 1024)
+        vit_embeds = self.vision_model(pixel_values=pixel_values)[0] # (7, 1025, 1024)
         vit_embeds = vit_embeds[:, 1:, :] # (7, 1024, 1024)
         h = w = int(vit_embeds.shape[1] ** 0.5)
         vit_embeds = vit_embeds.reshape(vit_embeds.shape[0], h, w, -1) # (7, 32, 32, 1024)

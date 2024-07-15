@@ -28,6 +28,12 @@ def read_json(path):
     with open(path, "r") as f:
         return json.load(f)
 
+def name_replace_vit(name: str):
+    name = name.replace('norm1.weight', 'norm1.gamma')
+    name = name.replace('norm1.bias', 'norm1.beta')
+    name = name.replace('norm2.weight', 'norm2.gamma')
+    name = name.replace('norm2.bias', 'norm2.beta')
+    return name
 
 def name_replace_llm(name: str):
     """replace hf param name to ms."""
@@ -59,9 +65,7 @@ def convert_hf_ckpt(ckpt_dir, output_path, dtype=ms.float16):
     ckpt_list = []
     for name, value in model_hf.named_parameters():
         if name.startswith("vision_model"):
-            # TODO add conversion
-            continue
-
+            name = name_replace_vit(name)
         elif name.startswith("language_model"):
             name = name_replace_llm(name)
         else: # mlp
