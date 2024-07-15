@@ -26,7 +26,7 @@ if __name__ == "__main__":
 
     tokenizer = InternLM2Tokenizer.from_pretrained("MiniInternLM2Chat2B")
 
-    pixel_value = load_image('sample.jpg', max_num=6)
+    pixel_value = load_image('./examples/image1.jpg', max_num=6)
 
     question = "请详细描述图片"
 
