@@ -7,6 +7,7 @@ from mindspore import Tensor
 from internvl.internlm_config import InternVLChatConfig
 from internvl.internlm_tokenizer import InternLM2Tokenizer
 from internvl.internvl import InternVLChat
+from internvl.data_process import load_image
 
 if __name__ == "__main__":
     # logging.basicConfig(level=logging.DEBUG)
@@ -25,9 +26,11 @@ if __name__ == "__main__":
 
     tokenizer = InternLM2Tokenizer.from_pretrained("MiniInternLM2Chat2B")
 
+    pixel_value = load_image('sample.jpg', max_num=6)
+
     question = "请详细描述图片"
 
-    pixel_values = Tensor(np.random.randn(1, 7, 3, 448, 448)) # TODO to change to real image
+    pixel_values = Tensor(pixel_value, dtype=intern_config.vision_config.compute_dtype)
 
     outputs = model.chat(tokenizer, pixel_values, question)
 
