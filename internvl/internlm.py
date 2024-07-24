@@ -54,7 +54,7 @@ class InternLM2Model(BaseLLMModel):
         self.image_start_token_pos = 26
 
         # 1. wte
-        self.wte = LlamaEmbedding(
+        self.tok_embeddings = LlamaEmbedding(
             self.vocab_size, self.embed_dim, param_init_type=config.param_init_type, parallel_optimizer=True
         )
 
@@ -131,7 +131,7 @@ class InternLM2Model(BaseLLMModel):
             input_ids = input_ids.view(-1, input_shape[-1])
 
         # 1. wte
-        inputs_embeds = self.wte(input_ids)
+        inputs_embeds = self.tok_embeddings(input_ids)
 
         if self.is_first_iteration and image_features is not None:
             bs, seq_len = self.shape(input_ids)
@@ -208,8 +208,8 @@ class InternLM2CausalLM(BaseLLMModel):
     def __init__(self, config=None):
         super().__init__(config)
 
-        self.transformer = InternLM2Model(config=config)
-        self.lm_head = Linear(
+        self.model = InternLM2Model(config=config)
+        self.output = Linear(
             in_channels=config.hidden_size,
             out_channels=config.vocab_size,
             has_bias=False,
@@ -269,7 +269,7 @@ class InternLM2CausalLM(BaseLLMModel):
         if not self.is_first_iteration:
             batch_valid_length = self.sub_batch_valid_len(batch_valid_length, 1)
 
-        output = self.transformer(
+        output = self.model(
             tokens,
             init_reset=init_reset,
             batch_valid_length=batch_valid_length,
@@ -280,7 +280,7 @@ class InternLM2CausalLM(BaseLLMModel):
         pre_gather = (not self.use_past or self.is_first_iteration) and batch_valid_length is not None
         if pre_gather:
             output = self.gather(output, self.sub_batch_valid_len(batch_valid_length, 1), 1)
-        logits = self.lm_head(output)
+        logits = self.output(output)
 
         input_mask = self.cast(self.not_equal(tokens, self.pad_token_id), mstype.float32)
         if labels is None:

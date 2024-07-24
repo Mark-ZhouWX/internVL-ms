@@ -37,10 +37,7 @@ def name_replace_vit(name: str):
 
 def name_replace_llm(name: str):
     """replace hf param name to ms."""
-    name = name.replace('language_model.model.tok_embeddings.weight', 'language_model.transformer.wte.embedding_weight')
-    name = name.replace('language_model.model', 'language_model.transformer')
-    name = name.replace('language_model.output', 'language_model.lm_head')
-
+    name = name.replace('language_model.model.tok_embeddings.weight', 'language_model.model.tok_embeddings.embedding_weight')
     return name
 
 def name_replace_other(name: str):

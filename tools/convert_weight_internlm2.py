@@ -31,9 +31,9 @@ def read_json(path):
 
 def name_replace(name: str):
     """replace hf param name to ms."""
-    name = name.replace('language_model.model.tok_embeddings.weight', 'transformer.wte.embedding_weight')
-    name = name.replace('language_model.model', 'transformer')
-    name = name.replace('language_model.output', 'lm_head')
+    name = name.replace('language_model.model.tok_embeddings.weight', 'model.tok_embeddings.embedding_weight')
+    name = name.replace('language_model.model', 'model')
+    name = name.replace('language_model.output', 'output')
 
     return name
 
