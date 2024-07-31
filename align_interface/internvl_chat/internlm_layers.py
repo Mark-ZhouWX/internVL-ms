@@ -1,3 +1,4 @@
+import math
 from enum import Enum
 from typing import Optional, Tuple
 
@@ -7,7 +8,7 @@ import numpy as np
 import mindspore as ms
 import mindspore.common.dtype as mstype
 from mindnlp.transformers.activations import ACT2FN
-from mindnlp.transformers.models.llama.modeling_llama import LlamaMLP
+from mindnlp.transformers.models.llama.modeling_llama import LlamaMLP, LlamaDynamicNTKScalingRotaryEmbedding, repeat_kv
 from mindspore import Parameter, Tensor, nn, ops
 from mindspore._c_expression import MSContext
 from mindspore.common.initializer import initializer
@@ -31,108 +32,59 @@ class SeqExtendMethod(Enum):
 
 
 
-class FreqsMgr(nn.Cell):
+class InternLM2RotaryEmbedding(nn.Cell):
     r"""freqs_cis manager."""
 
     def __init__(
         self,
         head_dim,
-        max_position_embedding=4096,
+        max_position_embeddings=4096,
         rotary_dtype=mstype.float16,
-        rope_theta=10000.0,
-        rope_scaling=1.0,
+        base=10000.0,
+        scaling_factor=1.0,
         extend_method=SeqExtendMethod.NONE.value,
     ):
         super().__init__()
         if extend_method == SeqExtendMethod.NTK.value:
-            rope_theta *= rope_scaling
+            base *= scaling_factor
         freqs_base = np.arange(0, head_dim, 2)[: (head_dim // 2)].astype(np.float32)  # (head_dim // 2, )
-        freqs = 1.0 / (rope_theta ** (freqs_base / head_dim))  # (head_dim // 2, )
+        freqs = 1.0 / (base ** (freqs_base / head_dim))  # (head_dim // 2, )
         if extend_method == SeqExtendMethod.PI.value:
-            t = np.arange(0, max_position_embedding / rope_scaling, 1 / rope_scaling).astype(np.float32)
+            t = np.arange(0, max_position_embeddings / scaling_factor, 1 / scaling_factor).astype(np.float32)
         else:
-            t = np.arange(0, max_position_embedding, 1).astype(np.float32)
+            t = np.arange(0, max_position_embeddings, 1).astype(np.float32)
         freqs = np.outer(t, freqs)  # (max_position_embedding, head_dim // 2)
         emb = np.concatenate((freqs, freqs), axis=-1)
         freqs_cos = np.cos(emb)  # (seq_len, head_dim)
         freqs_sin = np.sin(emb)  # (seq_len, head_dim)
-        swap_mask = FreqsMgr.get_swap_mask(head_dim)
 
         self.head_dim = head_dim
         self.freqs_cos = Tensor(freqs_cos, dtype=rotary_dtype)
         self.freqs_sin = Tensor(freqs_sin, dtype=rotary_dtype)
-        self.swap_mask = Tensor(swap_mask, dtype=rotary_dtype)
 
     def construct(self, seq_len):
-        freqs_cos, freqs_sin = self.freqs_cos, self.freqs_sin
-        freqs_cos = ops.strided_slice(freqs_cos, (0, 0), (seq_len, self.head_dim), (1, 1))
-        freqs_sin = ops.strided_slice(freqs_sin, (0, 0), (seq_len, self.head_dim), (1, 1))
-        return freqs_cos, freqs_sin, self.swap_mask
-
-    def increment(self, batch_valid_length, batch_size):
-        freqs_cos = ops.reshape(ops.gather(self.freqs_cos, batch_valid_length, 0), (batch_size, 1, 1, self.head_dim))
-        freqs_sin = ops.reshape(ops.gather(self.freqs_sin, batch_valid_length, 0), (batch_size, 1, 1, self.head_dim))
-        return freqs_cos, freqs_sin, self.swap_mask
-
-    @staticmethod
-    def get_swap_mask(head_dim):
-        """Swap matrix that swap two halves of the query """
-        zero_block = np.zeros((head_dim // 2, head_dim // 2), dtype=np.float32)
-        id_block = np.identity(head_dim // 2, dtype=np.float32)
-        return np.block([[zero_block, id_block], [-id_block, zero_block]])
+        return (
+            self.freqs_cos[:seq_len],  # (seq_len, head_dim)
+            self.freqs_sin[:seq_len]
+        )
 
 
-class LlamaRotaryEmbedding(nn.Cell):
-    r"""
-    Rotary Position Embedding.
+# Copied from transformers.model.llama.modeling_llama.rotate_half
+def rotate_half(x):
+    """Rotates half the hidden dims of the input."""
+    x1 = x[..., : x.shape[-1] // 2]
+    x2 = x[..., x.shape[-1] // 2 :]
+    return ops.cat((-x2, x1), axis=-1)
 
-    Args:
-            - **head_dim** (int): The dim of multi head attention.
-            - **compute_dtype** (mstype): The compute type, default mstype.float16.
-    Inputs:
-            - **x** (Tensor) - Tensor of shape :math:`(batch, seq\_length, hidden\_size)`.
 
-    Outputs:
-            Tensor of shape :math:`(batch, seq_length, hidden_size)`.
-    """
-
-    def __init__(self, head_dim=128, use_rope_slice=False):
-        super().__init__(auto_prefix=False)
-        self.half_head_dim = head_dim // 2
-        self.head_dim = head_dim
-        self.use_rope_slice = use_rope_slice
-        self.is_first_iteration = True
-        self.is_ascend = ms.get_context("device_target") == "Ascend"
-
-        self.bmm = ops.BatchMatMul()
-
-    def rotate_half(self, x, swap_mask):
-        # [bs, n_head/n_kv_head, seq/1, head_dim], [head_dim, head_dim]
-        if self.is_ascend:
-            x = self.bmm(x, swap_mask)
-        else:
-            x = ops.matmul(x, swap_mask)
-        return x
-
-    def slice_half(self, x):
-        bs, n_head, seq, _ = ops.shape(x)
-        x1 = ops.strided_slice(x, (0, 0, 0, 0), (bs, n_head, seq, self.half_head_dim), (1, 1, 1, 1))
-        x2 = ops.strided_slice(x, (0, 0, 0, self.half_head_dim), (bs, n_head, seq, self.head_dim), (1, 1, 1, 1))
-        x = ops.concat((ops.neg(x2), x1), -1)
-        return x
-
-    def construct(self, xq: Tensor, xk: Tensor, freqs_cis):
-        """Forward of rotary position embedding."""
-        # xq, xk: [bs, n_head/n_kv_head, seq/1, head_dim]
-        freqs_cos, freqs_sin, swap_mask = freqs_cis
-        if self.use_rope_slice:
-            xq_out = ops.add(ops.mul(xq, freqs_cos), ops.mul(self.slice_half(xq), freqs_sin))
-            xk_out = ops.add(ops.mul(xk, freqs_cos), ops.mul(self.slice_half(xk), freqs_sin))
-        else:
-            xq_out = ops.add(ops.mul(xq, freqs_cos), ops.mul(self.rotate_half(xq, swap_mask), freqs_sin))
-            xk_out = ops.add(ops.mul(xk, freqs_cos), ops.mul(self.rotate_half(xk, swap_mask), freqs_sin))
-
-        return xq_out, xk_out
+# Copied from transformers.model.llama.modeling_llama.apply_rotary_pos_emb
+def apply_rotary_pos_emb(q, k, cos, sin, position_ids, unsqueeze_dim=1):
+    """Applies Rotary Position Embedding to the query and key tensors."""
+    cos = cos[position_ids].unsqueeze(unsqueeze_dim)
+    sin = sin[position_ids].unsqueeze(unsqueeze_dim)
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+    k_embed = (k * cos) + (rotate_half(k) * sin)
+    return q_embed, k_embed
 
 
 class LlamaRMSNorm(nn.Cell):
@@ -295,7 +247,7 @@ class InternLM2Attention(nn.Cell):
         self.num_key_value_heads = config.num_key_value_heads
         self.num_key_value_groups = self.num_heads // self.num_key_value_heads  # num_query_head per key_value
         self.max_position_embeddings = config.max_position_embeddings
-        self.use_flash_attention = config.use_flash_attention
+        self.rope_theta = config.rope_theta
         self.is_causal = True
 
         if (self.head_dim * self.num_heads) != self.hidden_size:
@@ -306,7 +258,6 @@ class InternLM2Attention(nn.Cell):
 
         self.is_first_iteration = True
 
-        self.apply_rotary_emb = LlamaRotaryEmbedding(self.head_dim)
         self.wqkv = nn.Dense(self.hidden_size,
                              (self.num_heads + 2 * self.num_key_value_heads) * self.head_dim,
                              has_bias=config.bias)
@@ -315,122 +266,124 @@ class InternLM2Attention(nn.Cell):
         if False and self.use_flash_attention:
             self.flash_attention = FlashAttention(self.head_dim, n_heads, next_block_num=0, high_precision=True)
 
-        if config.use_cache:
-            self.kvcache_mgr = KVCacheMgr(
-                self.num_key_value_heads,
-                self.head_dim,
-                max_batch_size=config.batch_size,
-                max_seq_length=config.seq_len,
-                use_kvcache_op=config.use_kvcache_op,
-            )
-
         self.inv_norm_factor = Tensor(1.0 / self.head_dim**0.5)
 
         self.batch_matmul_q_k = ops.BatchMatMul(transpose_b=True)
         self.batch_matmul = ops.BatchMatMul()
+        self._init_rope()
 
+    def _init_rope(self):
+        if self.config.rope_scaling is None:
+            self.rotary_emb = LlamaRotaryEmbedding(
+                self.head_dim,
+                max_position_embeddings=self.max_position_embeddings,
+                base=self.rope_theta,
+            )
+        else:
+            scaling_type = self.config.rope_scaling["type"]
+            scaling_factor = self.config.rope_scaling["factor"]
+            if scaling_type == "linear":
+                self.rotary_emb = LlamaLinearScalingRotaryEmbedding(
+                    self.head_dim,
+                    max_position_embeddings=self.max_position_embeddings,
+                    scaling_factor=scaling_factor,
+                    base=self.rope_theta,
+                )
+            elif scaling_type == "dynamic":
+                self.rotary_emb = LlamaDynamicNTKScalingRotaryEmbedding(
+                    self.head_dim,
+                    max_position_embeddings=self.max_position_embeddings,
+                    scaling_factor=scaling_factor,
+                    base=self.rope_theta,
+                )
+            else:
+                raise ValueError(f"Unknown RoPE scaling type {scaling_type}")
     def construct(
             self,
             hidden_states: mindspore.Tensor,
             attention_mask: Optional[mindspore.Tensor] = None,  # (bs, 1, seq_len, seq_len)
-            position_ids: Optional[mindspore.Tensor] = None,
-            freqs_cis: Tuple[Tensor, Tensor] = None, # precomputed rope cos and sin value
-            kvcache_inputs: Optional[Tuple]=None,  # kv cache preprocess data
+            position_ids: Optional[mindspore.Tensor] = None,  # (bs, seq_len/1)
+            past_key_value: Optional[Tuple[ms.Tensor]] = None,
             output_attentions: bool = False,
             use_cache: bool = False,
             **kwargs,
-    ) -> mindspore.Tensor:
+    ) -> Tuple[ms.Tensor, Optional[ms.Tensor], Optional[Tuple[ms.Tensor]]]:
         """Forward process of the MultiHeadAttention"""
         # [bs, seq/1, hidden_dim]
-        bs, seq_len, _ = ops.shape(hidden_states)
+        bsz, q_len, _ = ops.shape(hidden_states)
         # [bs * seq/1, hidden_dim]
         hidden_states = ops.reshape(hidden_states, (-1, hidden_states.shape[-1]))
         bs_seq = hidden_states.shape[0]
         qkv = self.wqkv(hidden_states)
 
         # split qkv
-        qkv = ops.reshape(qkv, (bs, seq_len, -1, self.num_key_value_groups + 2, self.head_dim))
-        query = qkv[:, :, :, :self.num_key_value_groups, :].reshape(bs, seq_len, self.num_heads, self.head_dim)
-        key = qkv[:, :, :, self.num_key_value_groups, :]  # (bs, seq, num_key_head, head_dim)
+        qkv = ops.reshape(qkv, (bsz, q_len, -1, self.num_key_value_groups + 2, self.head_dim))
+        query_states = qkv[:, :, :, :self.num_key_value_groups, :].reshape(bsz, q_len, self.num_heads, self.head_dim)
+        key_states = qkv[:, :, :, self.num_key_value_groups, :]  # (bs, seq, num_key_head, head_dim)
         value = qkv[:, :, :, self.num_key_value_groups + 1, :]  # (bs, seq, num_key_head, head_dim)
 
         # [bs, n_query_head/n_key_head, seq/1, head_dim]
-        query = ops.transpose(query, (0, 2, 1, 3))
-        key = ops.transpose(key, (0, 2, 1, 3))
-        value = ops.transpose(value, (0, 2, 1, 3))
+        query_states = ops.transpose(query_states, (0, 2, 1, 3))
+        key_states = ops.transpose(key_states, (0, 2, 1, 3))
+        value_states = ops.transpose(value, (0, 2, 1, 3))
 
-        query, key = self.apply_rotary_emb(query, key, freqs_cis)
+        kv_seq_len = key_states.shape[-2]  # seq/1
+        if past_key_value is not None:
+            kv_seq_len = past_key_value[0].shape[-2]  # seq
+        cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)  # seq 1024
+
+        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
         # kv cache: [bs, n_kv_head, 1, head_dim] -> [bs, n_kv_head, seq, head_dim]
-        if use_cache:
-            key, value = self.kvcache_mgr(key, value, kvcache_inputs)
-        # kv share: [bs, n_kv_head, seq, head_dim] -> [bs, n_head, seq, head_dim]
-        key = self._repeat_kv(key, self.num_key_value_groups)
-        value = self._repeat_kv(value, self.num_key_value_groups)
-        # q, k, v: [bs, n_head, seq/1, head_dim], [bs, n_head, seq, head_dim], [bs, n_head, seq, head_dim]
-        if self.use_flash_attention:
-            attention = self.flash_attention(query, key, value, attention_mask)
-            attention = self._merge_heads(attention)
-        else:
-            attention = self._attn(query, key, value, attention_mask)
+        if past_key_value is not None:
+            # current_valid_pos: one hot vector at position_id
+            seq_range = ops.arange(0, kv_seq_len, dtype=ms.int32)
+            full_shape = past_key_value[0].shape
+            current_valid_pos = ops.equal(seq_range.reshape(1, 1, -1, 1), position_ids)
+            key_states = ops.where(current_valid_pos.broadcast_to(full_shape), key_states.broadcast_to(full_shape), past_key_value[0])  # (bs, n_kv_head, seq, head_dim)
+            value_states = ops.where(current_valid_pos.broadcast_to(full_shape), value_states.broadcast_to(full_shape), past_key_value[1])
+
+        past_key_value = (key_states, value_states) if use_cache else None
+
+        key_states = repeat_kv(key_states, self.num_key_value_groups)
+        value_states = repeat_kv(value_states, self.num_key_value_groups)
+
+        attn_weights = ops.matmul(query_states, key_states.swapaxes(2, 3)) / math.sqrt(self.head_dim)
+
+        if attn_weights.shape != (bsz, self.num_heads, q_len, kv_seq_len):
+            raise ValueError(
+                f"Attention weights should be of size {(bsz, self.num_heads, q_len, kv_seq_len)}, but is"
+                f" {attn_weights.shape}"
+            )
+
+        if attention_mask is not None:
+            if attention_mask.shape != (bsz, 1, q_len, kv_seq_len):
+                raise ValueError(
+                    f"Attention mask should be of size {(bsz, 1, q_len, kv_seq_len)}, but is {attention_mask.shape}"
+                )
+            attn_weights = attn_weights + attention_mask
+
+        # upcast attention to fp32
+        attn_weights = ops.softmax(attn_weights, axis=-1, dtype=mindspore.float32).to(query_states.dtype)
+        # attn_weights = ops.dropout(attn_weights, p=self.attention_dropout, training=self.training)
+        attn_output = ops.matmul(attn_weights, value_states)
+
+        if attn_output.shape != (bsz, self.num_heads, q_len, self.head_dim):
+            raise ValueError(
+                f"`attn_output` should be of size {(bsz, self.num_heads, q_len, self.head_dim)}, but is"
+                f" {attn_output.shape}"
+            )
+
+        attn_output = attn_output.swapaxes(1, 2)
+
+        attn_output = attn_output.reshape(bsz, q_len, self.hidden_size)
+
         # [bs, seq/1, hidden_dim] or [bs * seq/1, hidden_dim]
-        output = self.wo(attention)  # dp, mp -> dp, 1 / dp * mp, 1
+        attn_output = self.wo(attn_output)  # dp, mp -> dp, 1 / dp * mp, 1
 
-        return output
+        if not output_attentions:
+            attn_weights = None
 
-    def _repeat_kv(self, x, rep):
-        if rep == 1:
-            return x
-        bs, n_kv_head, seqlen, head_dim = ops.shape(x)
-        x = ops.reshape(x, (bs, n_kv_head, 1, seqlen * head_dim))
-        x = ops.tile(x, (1, 1, rep, 1))
-        x = ops.reshape(x, (bs, n_kv_head * rep, seqlen, head_dim))
-        return x
-
-    def _merge_heads(self, x):
-        """
-        convert a 4d input to a 2d or 3d output
-
-        Inputs:
-            x: input tensor
-
-        Output:
-            x_merge: the 2d output
-        """
-        # [bs, n_head, seq/1, head_dim]
-        x = ops.transpose(x, (0, 2, 1, 3))  # dp,mp,1,1 -> dp,1,mp,1
-        # [bs, seq/1, n_head, head_dim]
-        bs, seq_len, n_head, head_dim = ops.shape(x)
-        # [bs, seq/1, hidden_dim]
-        new_shape = (bs, seq_len, n_head * head_dim)
-        x_merge = ops.reshape(x, new_shape)
-        return x_merge
-
-    def _attn(self, query, key, value, mask):
-        """
-        Get the weighted score along the seq_length
-
-        Inputs:
-            query: the query matrix
-            key: the key matrix
-            value: the value matrix
-            mask: the attention mask adder matrix with shape (batch_size,
-            1, seq_length, seq_length)
-        Outputs:
-            weighted_values: Tensor, the weighted sum scores
-        """
-        # q, k: [bs, n_head, seq/1, head_dim], [bs, n_head, seq, head_dim]
-        score = self.batch_matmul_q_k(query, key)
-        # score: [bs, n_head, seq/1, seq]
-        score = ops.mul(score, self.inv_norm_factor.astype(query.dtype))
-        score = ops.add(mask, score)
-
-        attention_probs = ops.softmax(score)
-        # score, v: [bs, n_head, seq/1, seq], [bs, n_head, seq, head_dim]
-        weighted_values = self.batch_matmul(attention_probs, value)
-        # [bs, n_head, seq/1, head_dim]
-        attention_merge = self._merge_heads(weighted_values)
-        # [bs, seq/1, hidden_dim] or [bs * seq/1, hidden_dim]
-        return attention_merge
+        return attn_output, attn_weights, past_key_value
 
 
 
@@ -459,20 +412,41 @@ class InternLM2DecoderLayer(nn.Cell):
         self.attention = InternLM2Attention(config)
         self.feed_forward = InternLM2MLP(config)
 
-    def construct(self, hidden_states, attention_mask, freqs_cis, kvcache_inputs, use_cache):
+    def construct(self,
+        hidden_states: ms.Tensor,
+        attention_mask: Optional[ms.Tensor] = None,
+        position_ids: Optional[ms.Tensor] = None,
+        past_key_value: Optional[Tuple[ms.Tensor]] = None,
+        output_attentions: Optional[bool] = False,
+        use_cache: Optional[bool] = False,
+        **kwargs):
         """Forward of transformer block."""
         # [bs, seq/1, hidden_dim]
-        input_x = self.attention_norm(hidden_states)
+        residual = hidden_states
+
+        hidden_states = self.attention_norm(hidden_states)
         # [bs, seq/1, hidden_dim]
-        h = self.attention(input_x,
+        hidden_states, self_attn_weights, present_key_value = self.attention(
+                           hidden_states=hidden_states,
                            attention_mask=attention_mask,
-                           freqs_cis=freqs_cis,
-                           kvcache_inputs=kvcache_inputs,
-                           use_cache=use_cache)
-        h = ops.add(hidden_states, h)
-        ffn_norm = self.ffn_norm(h)
-        # [bs, seq/1, hidden_dim]
-        ffn_out = self.feed_forward(ffn_norm)
-        # [bs, seq/1, hidden_dim] or [bs * seq/1, hidden_dim]
-        out = ops.add(h, ffn_out)
-        return out
+                           position_ids=position_ids,
+                           past_key_value=past_key_value,
+                           output_attentions=output_attentions,
+                           use_cache=use_cache,
+                           **kwargs,)
+        hidden_states = residual + hidden_states
+
+        residual = hidden_states
+        hidden_states = self.ffn_norm(hidden_states)
+        hidden_states = self.feed_forward(hidden_states)
+        hidden_states = residual + hidden_states
+
+        outputs = (hidden_states,)
+
+        if output_attentions:
+            outputs += (self_attn_weights,)
+
+        if use_cache:
+            outputs += (present_key_value,)
+
+        return outputs

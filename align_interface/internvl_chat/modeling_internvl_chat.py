@@ -111,7 +111,7 @@ class InternVLChatModel(PreTrainedModel):
 
         generation_output = self.language_model.generate(
             inputs_embeds=input_embeds,
-            attention_mask=attention_mask,
+            attention_mask=ms.Tensor(attention_mask, ms.int32),
             output_hidden_states=False,
             return_dict=False,  # return_dict=False is activated due to lack of custom class in graph mode
             use_cache=True,

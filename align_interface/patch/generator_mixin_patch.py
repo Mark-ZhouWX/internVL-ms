@@ -1,3 +1,4 @@
+import time
 import warnings
 from typing import Optional, Union, List, Dict, Any
 
@@ -6,7 +7,7 @@ import numpy as np
 from mindnlp.transformers import validate_stopping_criteria, LogitsProcessorList, StoppingCriteriaList
 from mindnlp.transformers.generation.utils import GenerationMixin, GreedySearchOutput, GreedySearchEncoderDecoderOutput, \
     GreedySearchDecoderOnlyOutput
-from mindnlp.transformers.modeling_outputs import BaseModelOutput, CausalLMOutput
+from mindnlp.transformers.modeling_outputs import BaseModelOutput, CausalLMOutput, CausalLMOutputWithPast
 from mindspore import ops, nn
 
 
@@ -34,6 +35,7 @@ def _update_model_kwargs_for_generation(
     model_kwargs["past_key_values"] = self._extract_past_from_model_output(
         outputs, standardize_cache_format=standardize_cache_format
     )
+    model_kwargs["past_key_values"] = mindspore.mutable(model_kwargs["past_key_values"])
 
     # update token_type_ids with last value
     if "token_type_ids" in model_kwargs:
@@ -44,8 +46,12 @@ def _update_model_kwargs_for_generation(
         # update attention mask
         if "attention_mask" in model_kwargs:
             attention_mask = model_kwargs["attention_mask"]  # numpy
-            batch_valid_length = np.expand_dims(attention_mask.sum(-1), -1)  # (bs, 1)
-            np.put_along_axis(attention_mask, indices=batch_valid_length, values=1, axis=1)
+            # batch_valid_length = np.expand_dims(attention_mask.sum(-1), -1)  # (bs, 1)
+            # np.put_along_axis(attention_mask, indices=batch_valid_length, values=1, axis=1)
+
+            update_pos = attention_mask.sum(-1, keepdims=True)  # (bs, 1)
+            attention_mask = ops.scatter(attention_mask, index=update_pos, axis=1,
+                                         src=ops.ones(update_pos.shape, dtype=attention_mask.dtype))
             model_kwargs["attention_mask"] = attention_mask
     else:
         # update decoder attention mask
@@ -212,19 +218,18 @@ def greedy_search(
     unfinished_sequences = ops.ones(input_ids.shape[0], dtype=mindspore.int64)
 
     this_peer_finished = False  # used by synced_gpus only
-    iteration_manager = IterationManager(self)
     while True:
+        t = time.time()
         # prepare model inputs
         model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
         # forward pass to get next token
-        with iteration_manager:
-            outputs = self(
-                **model_inputs,
-                return_dict=False,
-                output_attentions=output_attentions,
-                output_hidden_states=output_hidden_states,
-            )
-            outputs = CausalLMOutput(logits=outputs)  # wrap as dict for compatibility
+        outputs = self(
+            **model_inputs,
+            return_dict=False,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+        )
+        outputs = CausalLMOutputWithPast(logits=outputs[0], past_key_values=outputs[1])  # wrap as dict for compatibility
 
         if synced_gpus and this_peer_finished:
             continue  # don't waste resources running the code we don't need
@@ -265,7 +270,7 @@ def greedy_search(
         model_kwargs = self._update_model_kwargs_for_generation(
             outputs, model_kwargs, is_encoder_decoder=self.config.is_encoder_decoder
         )
-
+        print(f"{input_ids.shape}, { time.time() - t:.2f}s")
         # if eos_token was found in one sentence, set sentence to finished
         if eos_token_id_tensor is not None:
             unfinished_sequences = unfinished_sequences.mul(

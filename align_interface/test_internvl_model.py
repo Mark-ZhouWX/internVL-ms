@@ -1,5 +1,7 @@
 from patch.generator_mixin_patch import patch_generator_mixin
+from patch.modeling_attn_mask_utils_patch import patch_attn_mask
 
+patch_attn_mask()
 patch_generator_mixin()
 
 import mindspore as ms
@@ -8,7 +10,7 @@ from internvl.data_process import load_image
 from internvl_chat.modeling_internvl_chat import InternVLChatModel
 from internvl_chat.tokenization_internlm2 import InternLM2Tokenizer
 
-ms.set_context(mode=0, device_target='Ascend')
+ms.set_context(mode=1, device_target='Ascend')
 
 path = "./Mini-InternVL-Chat-2B-V1-5-raw"
 
