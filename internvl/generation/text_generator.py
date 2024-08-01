@@ -453,6 +453,7 @@ class GeneratorMixin:
                 update_time,
                 forward_time + search_time + update_time,
             )
+            print(f"{valid_length_each_example}, {forward_time + search_time + update_time:.3f}s")
 
         # Return valid outputs out of padded outputs
         output_ids = []

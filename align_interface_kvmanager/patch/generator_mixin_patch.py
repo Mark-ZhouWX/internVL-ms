@@ -1,3 +1,4 @@
+import time
 import warnings
 from typing import Optional, Union, List, Dict, Any
 
@@ -214,6 +215,7 @@ def greedy_search(
     this_peer_finished = False  # used by synced_gpus only
     iteration_manager = IterationManager(self)
     while True:
+        t = time.time()
         # prepare model inputs
         model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
         # forward pass to get next token
@@ -265,7 +267,7 @@ def greedy_search(
         model_kwargs = self._update_model_kwargs_for_generation(
             outputs, model_kwargs, is_encoder_decoder=self.config.is_encoder_decoder
         )
-
+        print(f"{input_ids.shape}, {time.time() - t:.3f}s")
         # if eos_token was found in one sentence, set sentence to finished
         if eos_token_id_tensor is not None:
             unfinished_sequences = unfinished_sequences.mul(

@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 import yaml
 
@@ -11,7 +13,10 @@ from internvl.data_process import load_image
 
 if __name__ == "__main__":
     # logging.basicConfig(level=logging.DEBUG)
-    ms.set_context(mode=1, device_target="Ascend")
+    mode = 0
+    ms.set_context(mode=mode, device_target='Ascend')
+    print(f'mode: {mode}')
+
     config_path = './configs/mini_internvl_chat_2b_v1_5.yaml'
 
     with open(config_path) as stream:
