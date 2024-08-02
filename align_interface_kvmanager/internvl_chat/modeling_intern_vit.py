@@ -1,6 +1,6 @@
 import numpy as np
 from typing import Optional, Tuple
-from einops import rearrange
+
 import mindspore as ms
 from mindspore import nn, ops, Tensor
 from mindspore.numpy import ones
