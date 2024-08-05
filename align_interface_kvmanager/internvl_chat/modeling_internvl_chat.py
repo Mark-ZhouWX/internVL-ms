@@ -37,7 +37,7 @@ class InternVLChatModel(PreTrainedModel):
         if vision_model is not None:
             self.vision_model = vision_model
         else:
-            self.vision_model = DummyVitModel(config.vision_config)
+            self.vision_model = InternVisionModel(config.vision_config)
         if language_model is not None:
             self.language_model = language_model
         else:
