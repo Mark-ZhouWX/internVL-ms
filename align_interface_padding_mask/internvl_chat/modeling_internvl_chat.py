@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, List, Optional, Tuple, Union
 
 import mindspore as ms
 import numpy as np
@@ -6,9 +6,10 @@ from mindspore import nn, ops
 
 from mindnlp.utils import logging
 from mindnlp.transformers.modeling_utils import PreTrainedModel
+from mindnlp.transformers.modeling_outputs import CausalLMOutputWithPast
 
 from .configuration_internvl_chat import InternVLChatConfig
-from .modeling_intern_vit import InternVisionModel, DummyVitModel
+from .modeling_intern_vit import InternVisionModel
 
 from .modeling_internlm2 import InternLM2ForCausalLM
 
@@ -60,8 +61,109 @@ class InternVLChatModel(PreTrainedModel):
             nn.Dense(llm_hidden_size, llm_hidden_size)
         )
 
+        self.img_context_token_id = None
         # TODO add code about lora
         pass
+
+    def construct(
+            self,
+            pixel_values: ms.Tensor,
+            input_ids: ms.Tensor = None,
+            img_context_token_index: Tuple[Tuple[int]] = None,
+            attention_mask: Optional[ms.Tensor] = None,
+            position_ids: Optional[ms.Tensor] = None,
+            image_flags: Optional[ms.Tensor] = None,
+            past_key_values: Optional[List[ms.Tensor]] = None,
+            labels: Optional[ms.Tensor] = None,
+            use_cache: Optional[bool] = None,
+            output_attentions: Optional[bool] = None,
+            output_hidden_states: Optional[bool] = None,
+            return_dict: Optional[bool] = None,
+    ) -> Union[Tuple, CausalLMOutputWithPast]:
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        # image_flags = image_flags.squeeze(-1)
+        input_embeds = self.language_model.get_input_embeddings()(input_ids).copy()
+
+        vit_embeds = self.extract_feature(pixel_values)
+        # vit_embeds = vit_embeds[image_flags == 1]
+        # vit_batch_size = pixel_values.shape[0]
+
+        B, N, C = input_embeds.shape
+        llm_hidden_dim = vit_embeds.shape[-1]
+        vit_embeds = vit_embeds.reshape(B, -1, llm_hidden_dim)
+        # input_embeds = input_embeds.reshape(B * N, C)
+
+        # if ms.communication.get_rank() == 0:
+        #     print(f'dynamic ViT batch size: {vit_batch_size}, images per sample: {vit_batch_size / B}, dynamic token length: {N}')
+
+        # input_ids = input_ids.reshape(B * N)
+        # selected = (input_ids == self.img_context_token_id)
+        # try:
+        # input_embeds[selected] = input_embeds[selected] * 0.0 + vit_embeds.reshape(-1, C)
+        # image_bs = pixel_values.shape[0]
+        # image_token_total_num = self.num_image_token * image_bs
+        # img_context_token_start = np.equal(input_ids, self.img_context_token_id).argmax(axis=1)  # (bs,)
+        # img_context_token_end = img_context_token_start + image_token_total_num
+        # img_context_token_start = img_context_token_start.tolist()
+        # img_context_token_end = img_context_token_end.tolist()
+
+        input_embeds_list = []
+        for i in range(input_ids.shape[0]):
+            input_embeds_list.append(ops.concat([input_embeds[i, :img_context_token_index[i][0]],
+                                                 vit_embeds[i], input_embeds[i, img_context_token_index[i][1]:]], axis=0))
+        input_embeds = ops.stack(input_embeds_list)
+        ignore_flag = False
+        # except Exception as e:
+        #     vit_embeds = vit_embeds.reshape(-1, C)
+        #     print(f'warning: {e}, input_embeds[selected].shape={input_embeds[selected].shape}, '
+        #           f'vit_embeds.shape={vit_embeds.shape}')
+        #     n_token = selected.sum()
+        #     input_embeds[selected] = input_embeds[selected] * 0.0 + vit_embeds[:n_token]
+        #     ignore_flag = True
+
+        # input_embeds = input_embeds.reshape(B, N, C)
+
+        outputs = self.language_model(
+            inputs_embeds=input_embeds,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
+            labels=labels,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+        logits = outputs[1]
+
+        loss = None
+        if labels is not None:
+            # Shift so that tokens < n predict n
+            shift_logits = logits[..., :-1, :].contiguous()
+            shift_labels = labels[..., 1:].contiguous()
+            # Flatten the tokens
+            loss_fct = nn.CrossEntropyLoss()
+            shift_logits = shift_logits.view(-1, self.language_model.config.vocab_size)
+            shift_labels = shift_labels.view(-1)
+            # Enable model parallelism
+            # shift_labels = shift_labels.to(shift_logits.device)
+            loss = loss_fct(shift_logits, shift_labels)
+            if ignore_flag:
+                loss = loss * 0.0
+
+        if not return_dict:
+            output = (logits,) + outputs[1:]
+            return loss, logits
+            # return (loss,) + output if loss is not None else output
+
+        return CausalLMOutputWithPast(
+            loss=loss,
+            logits=logits,
+            past_key_values=outputs.past_key_values,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
+        )
 
     def chat(self, tokenizer, pixel_values, question, generation_config=None,
              IMG_START_TOKEN='<img>', IMG_END_TOKEN='</img>', IMG_CONTEXT_TOKEN='<IMG_CONTEXT>'):
@@ -72,7 +174,7 @@ class InternVLChatModel(PreTrainedModel):
         from .conversation import get_conv_template
 
         template = get_conv_template(self.template)
-        image_bs = pixel_values.shape[1] # (bs, bs_patch, c, h, w)
+        image_bs = pixel_values.shape[0] # (bs_patch, c, h, w)
         print(f'dynamic ViT batch size: {image_bs}')
 
         # pad image token as IMG_CONTEXT_TOKEN
@@ -96,8 +198,12 @@ class InternVLChatModel(PreTrainedModel):
         img_context_token_start = img_context_token_start.tolist()
         img_context_token_end = img_context_token_end.tolist()
 
-        vit_embeds = self.extract_feature(pixel_values) # (1, 1792, 2048)
         input_embeds = self.language_model.get_input_embeddings()(ms.Tensor(input_ids))
+        vit_embeds = self.extract_feature(pixel_values)
+        B, N, C = input_embeds.shape
+        llm_hidden_dim = vit_embeds.shape[-1]
+        vit_embeds = vit_embeds.reshape(B, -1, llm_hidden_dim)
+
 
         input_embeds_list = []
         for i in range(input_ids.shape[0]):
@@ -124,9 +230,6 @@ class InternVLChatModel(PreTrainedModel):
         return response
 
     def extract_feature(self, pixel_values) -> ms.float_:
-        bs, num_patch, channel, h, w = pixel_values.shape  # (1, 7, 3, 448, 448)
-        pixel_values = pixel_values.reshape(bs*num_patch, channel, h, w)
-
         vit_embeds = self.vision_model(pixel_values=pixel_values)[0] # (7, 1025, 1024)
         vit_embeds = vit_embeds[:, 1:, :] # (7, 1024, 1024)
         h = w = int(vit_embeds.shape[1] ** 0.5)
@@ -134,9 +237,6 @@ class InternVLChatModel(PreTrainedModel):
         vit_embeds = self.pixel_shuffle(vit_embeds, scale_factor=self.downsample_ratio) # (7, 16, 16, 4096)
         vit_embeds = vit_embeds.reshape(vit_embeds.shape[0], -1, vit_embeds.shape[-1]) # (7, 256, 4096)
         vit_embeds = self.mlp1(vit_embeds) # (7, 256, 2048)
-
-        llm_hidden_dim = vit_embeds.shape[-1]
-        vit_embeds = vit_embeds.reshape(bs, -1, llm_hidden_dim)  # (1, 1792, 2048)
 
         return vit_embeds
 

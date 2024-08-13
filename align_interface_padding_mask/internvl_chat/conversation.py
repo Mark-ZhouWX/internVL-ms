@@ -731,7 +731,8 @@ register_conv_template(
     Conversation(
         name='internlm2-chat',
         system_template='<|im_start|>system\n{system_message}',
-        system_message='You are an AI assistant whose name is InternLM (书生·浦语).',
+        # system_message='You are an AI assistant whose name is InternLM (书生·浦语).',
+        system_message='你是由上海人工智能实验室联合商汤科技开发的书生多模态大模型，英文名叫InternVL, 是一个有用无害的人工智能助手。',
         roles=('<|im_start|>user\n', '<|im_start|>assistant\n'),
         sep_style=SeparatorStyle.MPT,
         sep='<|im_end|>',
