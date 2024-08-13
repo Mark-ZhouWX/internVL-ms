@@ -4,8 +4,8 @@ from patch.modeling_attn_mask_utils_patch import patch_attn_mask
 import mindspore as ms
 from mindspore import nn
 
-from internvl_chat.modeling_internvl_chat import InternVLChatModel
-from internvl_chat.tokenization_internlm2 import InternLM2Tokenizer
+from internvl.model.internvl_chat.modeling_internvl_chat import InternVLChatModel
+from internvl.model.internlm2.tokenization_internlm2 import InternLM2Tokenizer
 
 import torch
 

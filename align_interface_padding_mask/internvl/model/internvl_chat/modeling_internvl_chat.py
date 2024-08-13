@@ -9,10 +9,10 @@ from mindnlp.transformers.modeling_utils import PreTrainedModel
 from mindnlp.transformers.modeling_outputs import CausalLMOutputWithPast
 
 from .configuration_internvl_chat import InternVLChatConfig
-from .conversation import get_conv_template
+from internvl.conversation import get_conv_template
 from .modeling_intern_vit import InternVisionModel
 
-from .modeling_internlm2 import InternLM2ForCausalLM
+from internvl.model.internlm2.modeling_internlm2 import InternLM2ForCausalLM
 
 logger = logging.get_logger(__name__)
 
@@ -178,8 +178,6 @@ class InternVLChatModel(PreTrainedModel):
         # 1. get input string
         img_context_token_id = tokenizer.convert_tokens_to_ids(IMG_CONTEXT_TOKEN)
         self.img_context_token_id = img_context_token_id
-
-        from .conversation import get_conv_template
 
         template = get_conv_template(self.template)
         template.system_message = self.system_message

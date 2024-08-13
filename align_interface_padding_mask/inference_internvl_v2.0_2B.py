@@ -1,11 +1,11 @@
-from patch.generator_mixin_patch import patch_generator_mixin
-from patch.modeling_attn_mask_utils_patch import patch_attn_mask
+from internvl.patch.generator_mixin_patch import patch_generator_mixin
+from internvl.patch.modeling_attn_mask_utils_patch import patch_attn_mask
 
 import mindspore as ms
 
 from data_process import load_image
-from internvl_chat.modeling_internvl_chat import InternVLChatModel
-from internvl_chat.tokenization_internlm2 import InternLM2Tokenizer
+from internvl.model.internvl_chat.modeling_internvl_chat import InternVLChatModel
+from internvl.model.internlm2.tokenization_internlm2 import InternLM2Tokenizer
 
 mode = 0
 ms.set_context(mode=mode, device_target='Ascend')

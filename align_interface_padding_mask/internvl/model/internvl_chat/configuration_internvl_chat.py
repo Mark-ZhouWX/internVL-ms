@@ -11,7 +11,7 @@ from mindnlp.transformers.configuration_utils import PretrainedConfig
 from mindnlp.utils import logging
 
 from .configuration_intern_vit import InternVisionConfig
-from .configuration_internlm2 import InternLM2Config
+from internvl.model.internlm2.configuration_internlm2 import InternLM2Config
 
 logger = logging.get_logger(__name__)
 
