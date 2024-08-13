@@ -9,6 +9,7 @@ from mindnlp.transformers.modeling_utils import PreTrainedModel
 from mindnlp.transformers.modeling_outputs import CausalLMOutputWithPast
 
 from .configuration_internvl_chat import InternVLChatConfig
+from .conversation import get_conv_template
 from .modeling_intern_vit import InternVisionModel
 
 from .modeling_internlm2 import InternLM2ForCausalLM
@@ -19,7 +20,6 @@ logger = logging.get_logger(__name__)
 class InternVLChatModel(PreTrainedModel):
     config_class = InternVLChatConfig
     main_input_name = 'pixel_values'
-    _keys_to_ignore_on_load_missing = ["kvcache_mgr.key_past", "kvcache_mgr.value_past"]
 
     def __init__(self, config: InternVLChatConfig, vision_model=None, language_model=None):
         super().__init__(config)
@@ -32,6 +32,7 @@ class InternVLChatModel(PreTrainedModel):
         self.num_image_token = int((image_size // patch_size) ** 2 * (config.downsample_ratio ** 2))
         self.downsample_ratio = config.downsample_ratio
         self.ps_version = config.ps_version
+        self.llm_arch_name = config.llm_config.architectures[0]
 
         logger.info(f'num_image_token: {self.num_image_token}')
         logger.info(f'ps_version: {self.ps_version}')
@@ -62,6 +63,13 @@ class InternVLChatModel(PreTrainedModel):
         )
 
         self.img_context_token_id = None
+        self.conv_template = get_conv_template(self.template)
+        if hasattr(config, 'system_message'):
+            self.system_message = config.system_message
+        else:
+            self.system_message = self.conv_template.system_message
+        self.num_samples = 0
+
         # TODO add code about lora
         pass
 
@@ -174,6 +182,7 @@ class InternVLChatModel(PreTrainedModel):
         from .conversation import get_conv_template
 
         template = get_conv_template(self.template)
+        template.system_message = self.system_message
         image_bs = pixel_values.shape[0] # (bs_patch, c, h, w)
         print(f'dynamic ViT batch size: {image_bs}')
 

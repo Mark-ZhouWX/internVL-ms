@@ -24,11 +24,10 @@ from mindnlp.transformers.modeling_outputs import BaseModelOutputWithPast, Causa
 from mindspore import nn, ops, Tensor
 import mindspore.common.dtype as mstype
 from mindspore.common.initializer import initializer, Normal
+from mindspore.nn import CrossEntropyLoss
 
 from .configuration_internlm2 import InternLM2Config
-from .internlm_layers import InternLM2DecoderLayer, LlamaRMSNorm, CausalMaskForInternLM2
-from utils.kvcache_mgr import KVCachePreprocess
-from utils.loss import CrossEntropyLoss
+from .internlm_layers import InternLM2DecoderLayer, LlamaRMSNorm
 
 
 class InternLM2PreTrainedModel(PreTrainedModel):

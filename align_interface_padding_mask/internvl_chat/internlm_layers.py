@@ -1,5 +1,5 @@
 import math
-from enum import Enum
+
 from typing import Optional, Tuple
 
 import mindspore
@@ -10,63 +10,9 @@ import mindspore.common.dtype as mstype
 from mindnlp.transformers.activations import ACT2FN
 from mindnlp.transformers.models.llama.modeling_llama import LlamaMLP, LlamaDynamicNTKScalingRotaryEmbedding, repeat_kv
 from mindspore import Parameter, Tensor, nn, ops
-from mindspore._c_expression import MSContext
 from mindspore.common.initializer import initializer
 
 from .configuration_internlm2 import InternLM2Config
-from utils.kvcache_mgr import KVCacheMgr
-from utils.layers import Linear
-
-
-def is_910a():
-    device = MSContext.get_instance().get_ascend_soc_version()
-    return device in ["910a", "ascend910"]
-
-
-class SeqExtendMethod(Enum):
-    """Stores the acceptable string identifiers for seq length extend method"""
-
-    PI = "PI"
-    NTK = "NTK"
-    NONE = "None"
-
-
-
-class InternLM2RotaryEmbedding(nn.Cell):
-    r"""freqs_cis manager."""
-
-    def __init__(
-        self,
-        head_dim,
-        max_position_embeddings=4096,
-        rotary_dtype=mstype.float16,
-        base=10000.0,
-        scaling_factor=1.0,
-        extend_method=SeqExtendMethod.NONE.value,
-    ):
-        super().__init__()
-        if extend_method == SeqExtendMethod.NTK.value:
-            base *= scaling_factor
-        freqs_base = np.arange(0, head_dim, 2)[: (head_dim // 2)].astype(np.float32)  # (head_dim // 2, )
-        freqs = 1.0 / (base ** (freqs_base / head_dim))  # (head_dim // 2, )
-        if extend_method == SeqExtendMethod.PI.value:
-            t = np.arange(0, max_position_embeddings / scaling_factor, 1 / scaling_factor).astype(np.float32)
-        else:
-            t = np.arange(0, max_position_embeddings, 1).astype(np.float32)
-        freqs = np.outer(t, freqs)  # (max_position_embedding, head_dim // 2)
-        emb = np.concatenate((freqs, freqs), axis=-1)
-        freqs_cos = np.cos(emb)  # (seq_len, head_dim)
-        freqs_sin = np.sin(emb)  # (seq_len, head_dim)
-
-        self.head_dim = head_dim
-        self.freqs_cos = Tensor(freqs_cos, dtype=rotary_dtype)
-        self.freqs_sin = Tensor(freqs_sin, dtype=rotary_dtype)
-
-    def construct(self, seq_len):
-        return (
-            self.freqs_cos[:seq_len],  # (seq_len, head_dim)
-            self.freqs_sin[:seq_len]
-        )
 
 
 # Copied from transformers.model.llama.modeling_llama.rotate_half
@@ -111,7 +57,7 @@ class LlamaRMSNorm(nn.Cell):
 
         self.norm = ops.RmsNorm(eps)
 
-        if ms.get_context("device_target") == "Ascend" and not is_910a():
+        if ms.get_context("device_target") == "Ascend":
             self.rms_norm = self._rms_norm
         else:
             self.rms_norm = self._self_norm
@@ -133,49 +79,6 @@ class LlamaRMSNorm(nn.Cell):
     def construct(self, x):
         """Forward of RMSNorm."""
         return self.rms_norm(x)
-
-
-class CausalMaskForInternLM2(nn.Cell):
-    r"""Get the Lower triangular matrix from the input_ids.
-    [[[1. 0. 0. 0. 0]
-      [1. 1. 0. 0. 0]
-      [1. 1. 1. 0. 0]
-      [1. 1. 1. 1. 0]
-      [1. 1. 1. 1. 0]]]"""
-
-    def __init__(
-        self, seq_length, pad_token_id=0, use_flash_attention=False
-    ):
-        super().__init__()
-        self.pad_token_id = pad_token_id
-        self.use_flash_attention = use_flash_attention
-        self.multiply_data = Tensor([-10000.0])
-        self.one = Tensor([1.0])
-        self.lower_triangle_mask = Tensor(np.tril(np.ones(shape=(seq_length, seq_length))), mstype.float32)
-
-    def construct(self, attention_mask):
-        """Forward process of the CausalMask"""
-        bs, seq_len = attention_mask.shape
-        shape_right = (bs, 1, seq_len)
-        # Mask the padded inputs
-        mask_right = ops.reshape(attention_mask, shape_right)
-        lower_triangle = ops.expand_dims(self.lower_triangle_mask, 0)
-        # the returned shape is [bs, seq_length, seq_length]
-        attention_mask = ops.mul(mask_right, lower_triangle.astype(attention_mask.dtype))
-        return attention_mask
-
-    def increment(self, seq_range, batch_valid_length, zactivate_len=None):
-        if zactivate_len is not None:
-            seq_range = ops.strided_slice(seq_range, (0, 0, 0), (1, 1, ops.shape(zactivate_len)[0]), (1, 1, 1))
-        mask = ops.less_equal(ops.reshape(seq_range, (1, 1, -1)), ops.reshape(batch_valid_length, (-1, 1, 1)))
-        return mask
-
-    def post_process(self, mask, compute_dtype=ms.float32):
-        mask = ops.sub(1.0, ops.cast(mask, compute_dtype))
-        if not self.use_flash_attention:
-            mask = ops.expand_dims(mask, 1)
-            mask = ops.mul(mask, self.multiply_data.astype(compute_dtype))
-        return mask
 
 
 class InternLM2Attention(nn.Cell):

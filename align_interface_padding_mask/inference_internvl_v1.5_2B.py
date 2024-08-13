@@ -1,6 +1,3 @@
-from patch.generator_mixin_patch import patch_generator_mixin
-from patch.modeling_attn_mask_utils_patch import patch_attn_mask
-
 import mindspore as ms
 
 from data_process import load_image
@@ -11,10 +8,7 @@ mode = 0
 ms.set_context(mode=mode, device_target='Ascend')
 print(f'mode: {mode}')
 
-patch_attn_mask()
-patch_generator_mixin()
-
-path = "./Mini-InternVL-Chat-2B-V1-5-raw"
+path = "./Mini-InternVL-Chat-2B-V1-5"
 
 model = InternVLChatModel.from_pretrained(path)
 tokenizer = InternLM2Tokenizer.from_pretrained(path)
