@@ -20,7 +20,7 @@ import mindspore
 import numpy as np
 from mindnlp.transformers import PreTrainedModel
 from mindnlp.transformers.modeling_attn_mask_utils import _prepare_4d_causal_attention_mask
-from mindnlp.transformers.modeling_outputs import BaseModelOutputWithPast
+from mindnlp.transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from mindspore import nn, ops, Tensor
 import mindspore.common.dtype as mstype
 from mindspore.common.initializer import initializer, Normal
@@ -160,7 +160,12 @@ class InternLM2Model(InternLM2PreTrainedModel):
         if not return_dict:
             return tuple(v for v in [hidden_states, next_cache, all_hidden_states, all_self_attns] if v is not None)
 
-        raise NotImplementedError
+        return BaseModelOutputWithPast(
+            last_hidden_state=hidden_states,
+            past_key_values=next_cache,
+            hidden_states=all_hidden_states,
+            attentions=all_self_attns,
+        )
 
 
 class InternLM2ForCausalLM(InternLM2PreTrainedModel):
@@ -291,26 +296,27 @@ class InternLM2ForCausalLM(InternLM2PreTrainedModel):
         logits = logits.astype(mstype.float32)
 
         loss = None
-        # TODO add loss code
-        pass
+        if labels is not None:
+            # Shift so that tokens < n predict n
+            shift_logits = logits[..., :-1, :].contiguous()
+            shift_labels = labels[..., 1:].contiguous()
+            # Flatten the tokens
+            loss_fct = nn.CrossEntropyLoss()
+            shift_logits = shift_logits.view(-1, self.config.vocab_size)
+            shift_labels = shift_labels.view(-1)
+            # Enable model parallelism
+            # shift_labels = shift_labels.to(shift_logits.device)
+            loss = loss_fct(shift_logits, shift_labels)
 
         if not return_dict:
             output = (logits,) + outputs[1:]
             return (loss,) + output if loss is not None else output
 
-        # below for training
-        # TODO revise inputmask and label
-        # bs, seqlen = logits.shape[:2]
-        # if labels is None:
-        #     labels = ops.strided_slice(input_ids, (0, 1), (bs, seqlen), (1, 1))
-        # else:
-        #     # TODO add training code
-        #     pass
-        #
-        # if logits.ndim > 2:
-        #     logits = ops.reshape(logits, (-1, logits.shape[-1]))
-        # logits = ops.cast(logits, mstype.float32)
-        # labels = ops.reshape(labels, (-1,))
-        # input_mask = ops.reshape(input_mask, (-1,))
-        # loss = self.loss(logits, labels, input_mask)
-        # return loss
+        output = CausalLMOutputWithPast(
+            loss=loss,
+            logits=logits,
+            past_key_values=outputs.past_key_values,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
+        )
+        return output
