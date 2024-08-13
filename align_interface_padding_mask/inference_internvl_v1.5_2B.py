@@ -3,7 +3,7 @@ from patch.modeling_attn_mask_utils_patch import patch_attn_mask
 
 import mindspore as ms
 
-from internvl.data_process import load_image
+from data_process import load_image
 from internvl_chat.modeling_internvl_chat import InternVLChatModel
 from internvl_chat.tokenization_internlm2 import InternLM2Tokenizer
 
