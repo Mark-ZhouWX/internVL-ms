@@ -219,20 +219,35 @@ def greedy_search(
 
     this_peer_finished = False  # used by synced_gpus only
     while True:
-        t = time.time()
+        t_preprocess = time.time()
         # prepare model inputs
         model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
+        t_preprocess = time.time() - t_preprocess
         # forward pass to get next token
+        t_infer = time.time()
         outputs = self(
             **model_inputs,
             return_dict=False,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
         )
-        outputs = CausalLMOutputWithPast(logits=outputs[0], past_key_values=outputs[1])  # wrap as dict for compatibility
+        t_infer = time.time() - t_infer
+        t_postprocess = time.time()
+
+        # pick the last valid one
+        gather_last_valid = model_inputs['past_key_values'] is None  # the first iter
+        if gather_last_valid:
+            last_valid_pos = model_inputs['attention_mask'].sum(-1) - 1
+            logits = ops.gather(outputs[0], last_valid_pos, 1)
+        else:
+            logits = outputs[0]
+
+        outputs = CausalLMOutputWithPast(logits=logits, past_key_values=outputs[1])  # wrap as dict for compatibility
 
         if synced_gpus and this_peer_finished:
             continue  # don't waste resources running the code we don't need
+
+
         next_token_logits = outputs.logits[:, -1, :]  # currently only logits with shape (bs, 1, vocab_size) is returned
         # pre-process distribution
         next_tokens_scores = logits_processor(input_ids, next_token_logits)
@@ -270,7 +285,6 @@ def greedy_search(
         model_kwargs = self._update_model_kwargs_for_generation(
             outputs, model_kwargs, is_encoder_decoder=self.config.is_encoder_decoder
         )
-        print(f"{input_ids.shape}, { time.time() - t:.3f}s")
         # if eos_token was found in one sentence, set sentence to finished
         if eos_token_id_tensor is not None:
             unfinished_sequences = unfinished_sequences.mul(
@@ -284,6 +298,13 @@ def greedy_search(
         # stop if we exceed the maximum length
         if stopping_criteria(input_ids, scores):
             this_peer_finished = True
+
+        t_postprocess = time.time() - t_postprocess
+        print(f"token id: {input_ids.shape[1]}, "
+              f"preprocess: {t_preprocess:.3f}s, "
+              f"infer: {t_infer:.3f}s, {t_postprocess:.3f}s, "
+              f"postprocess: {t_postprocess:.3f}s, "
+              f"total: {t_preprocess + t_infer + t_postprocess:.3f}s")
 
         if this_peer_finished and not synced_gpus:
             break

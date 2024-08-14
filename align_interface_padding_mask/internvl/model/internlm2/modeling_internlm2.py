@@ -630,12 +630,6 @@ class InternLM2ForCausalLM(InternLM2PreTrainedModel):
 
         hidden_states = outputs[0]
 
-        # pick the last one
-        pre_gather = use_cache and past_key_values is None
-        if pre_gather:
-            last_valid_pos = attention_mask.sum(-1) - 1
-            hidden_states = ops.gather(hidden_states, last_valid_pos, 1)
-
         logits = self.output(hidden_states)  # (bs, seq_len/1, vocab_size)
         logits = logits.astype(mstype.float32)
 

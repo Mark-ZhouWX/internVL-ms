@@ -1,0 +1,1 @@
+import mindnlp.transformers.models.qwen2

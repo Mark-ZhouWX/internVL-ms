@@ -3,7 +3,9 @@ import mindspore as ms
 from data_process import load_image
 from internvl.model.internvl_chat.modeling_internvl_chat import InternVLChatModel
 from internvl.model.internlm2.tokenization_internlm2 import InternLM2Tokenizer
+from internvl.patch.generator_mixin_patch import patch_generator_mixin
 
+patch_generator_mixin()
 mode = 0
 ms.set_context(mode=mode, device_target='Ascend')
 print(f'mode: {mode}')
