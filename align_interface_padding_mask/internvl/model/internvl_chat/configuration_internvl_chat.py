@@ -6,7 +6,7 @@
 
 import copy
 
-from mindnlp.transformers import AutoConfig, LlamaConfig
+from mindnlp.transformers import AutoConfig, LlamaConfig, Qwen2Config
 from mindnlp.transformers.configuration_utils import PretrainedConfig
 from mindnlp.utils import logging
 
@@ -52,6 +52,8 @@ class InternVLChatConfig(PretrainedConfig):
             self.llm_config = LlamaConfig(**llm_config)
         elif llm_config['architectures'][0] == 'InternLM2ForCausalLM':
             self.llm_config = InternLM2Config(**llm_config)
+        elif llm_config['architectures'][0] == 'Qwen2ForCausalLM':
+            self.llm_config = Qwen2Config(**llm_config)
         else:
             raise ValueError('Unsupported architecture: {}'.format(llm_config['architectures'][0]))
         self.use_backbone_lora = use_backbone_lora

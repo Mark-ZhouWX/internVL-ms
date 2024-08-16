@@ -2,6 +2,7 @@ from typing import Any, List, Optional, Tuple, Union
 
 import mindspore as ms
 import numpy as np
+from mindnlp.transformers.models.qwen2 import Qwen2ForCausalLM
 from mindspore import nn, ops
 
 from mindnlp.utils import logging
@@ -47,6 +48,8 @@ class InternVLChatModel(PreTrainedModel):
                 raise NotImplementedError
             elif config.llm_config.architectures[0] == 'InternLM2ForCausalLM':
                 self.language_model = InternLM2ForCausalLM(config.llm_config)
+            elif config.llm_config.architectures[0] == 'Qwen2ForCausalLM':
+                self.language_model = Qwen2ForCausalLM(config.llm_config)
             else:
                 raise NotImplementedError(f'{config.llm_config.architectures[0]} is not implemented.')
 
@@ -194,7 +197,7 @@ class InternVLChatModel(PreTrainedModel):
         template.append_message(template.roles[1], None)
         query = template.get_prompt()  # str
 
-        model_inputs = tokenizer([query], max_length=self.config.llm_config.seq_len,
+        model_inputs = tokenizer([query], max_length=min(8192, self.config.llm_config.max_position_embeddings),
                                  padding='max_length', return_tensors='np')
         input_ids = model_inputs['input_ids'] # numpy (bs, N)
         attention_mask = model_inputs['attention_mask'] # numpy (bs, N) 1 for valid

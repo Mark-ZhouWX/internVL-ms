@@ -66,7 +66,7 @@ def _update_model_kwargs_for_generation(
 
 
 def greedy_search(
-        self: GenerationMixin,
+        self,
         input_ids: mindspore.Tensor,
         logits_processor: Optional[LogitsProcessorList] = None,
         stopping_criteria: Optional[StoppingCriteriaList] = None,
