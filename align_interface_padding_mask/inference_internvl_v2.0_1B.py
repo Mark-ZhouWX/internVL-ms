@@ -18,7 +18,7 @@ print(f'mode: {mode}')
 
 path = "./pretrained/InternVL2-1B"
 
-model = InternVLChatModel.from_pretrained(path)
+model = InternVLChatModel.from_pretrained(path, ms_dtype=ms.float16)
 tokenizer = Qwen2Tokenizer.from_pretrained(path)
 
 
