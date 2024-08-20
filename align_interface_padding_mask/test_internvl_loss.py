@@ -26,7 +26,7 @@ print(f'model name : {model_name}, dtype: {ms_dtype}')
 
 path_dict = {
     "InternVL2-1B": "./pretrained/InternVL2-1B",
-    "InternVL2-2B": "/home/hukang/models/internVL/InternVL2-2B/",
+    "InternVL2-2B": "./pretrained/InternVL2-2B/",
     "Mini-InternVL-Chat-2B-V1-5": "./pretrained/Mini-InternVL-Chat-2B-V1-5/"
 }
 
