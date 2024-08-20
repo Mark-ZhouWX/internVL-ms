@@ -14,7 +14,7 @@ print(f'mode: {mode}')
 patch_attn_mask()
 patch_generator_mixin()
 
-path = "/home/hukang/models/internVL/Mini-InternVL-Chat-2B-V1-5/"
+path = "/home/hukang/models/internVL/InternVL2-2B/"
 
 model = InternVLChatModel.from_pretrained(path)
 tokenizer = InternLM2Tokenizer.from_pretrained(path)

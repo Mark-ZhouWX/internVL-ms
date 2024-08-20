@@ -93,6 +93,9 @@ class InternVLChatModel(PreTrainedModel):
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
+        # print(self.base_model.dtype)
+        pixel_values = pixel_values.astype(self.vision_model.dtype)
+
         # image_flags = image_flags.squeeze(-1)
         input_embeds = self.language_model.get_input_embeddings()(input_ids).copy()
 
