@@ -97,16 +97,14 @@ class InternVLChatModel(PreTrainedModel):
         pixel_values = pixel_values.astype(self.vision_model.dtype)
 
         # image_flags = image_flags.squeeze(-1)
-        input_embeds = self.language_model.get_input_embeddings()(input_ids).copy()
+        input_embeds = self.language_model.get_input_embeddings()(input_ids).copy()  # (bs, seq_len, 2048)
 
-        vit_embeds = self.extract_feature(pixel_values)
+        vit_embeds = self.extract_feature(pixel_values)  # (sum_dyn_patch_along_bs, 256, 2048)
         # vit_embeds = vit_embeds[image_flags == 1]
         # vit_batch_size = pixel_values.shape[0]
 
         B, N, C = input_embeds.shape
-        llm_hidden_dim = vit_embeds.shape[-1]
-        vit_embeds = vit_embeds.reshape(B, -1, llm_hidden_dim)
-        # input_embeds = input_embeds.reshape(B * N, C)
+        input_embeds = input_embeds.reshape(B * N, C)
 
         # if ms.communication.get_rank() == 0:
         #     print(f'dynamic ViT batch size: {vit_batch_size}, images per sample: {vit_batch_size / B}, dynamic token length: {N}')
@@ -121,12 +119,13 @@ class InternVLChatModel(PreTrainedModel):
         # img_context_token_end = img_context_token_start + image_token_total_num
         # img_context_token_start = img_context_token_start.tolist()
         # img_context_token_end = img_context_token_end.tolist()
-
-        input_embeds_list = []
-        for i in range(input_ids.shape[0]):
-            input_embeds_list.append(ops.concat([input_embeds[i, :img_context_token_index[i][0]],
-                                                 vit_embeds[i], input_embeds[i, img_context_token_index[i][1]:]], axis=0))
-        input_embeds = ops.stack(input_embeds_list)
+        input_embeds[img_context_token_index] = vit_embeds.reshape(-1, C)
+        input_embeds = input_embeds.reshape(B, N, C)
+        # input_embeds_list = []
+        # for i in range(input_ids.shape[0]):
+        #     input_embeds_list.append(ops.concat([input_embeds[i, :img_context_token_index[i][0]],
+        #                                          vit_embeds[i], input_embeds[i, img_context_token_index[i][1]:]], axis=0))
+        # input_embeds = ops.stack(input_embeds_list)
         ignore_flag = False
         # except Exception as e:
         #     vit_embeds = vit_embeds.reshape(-1, C)

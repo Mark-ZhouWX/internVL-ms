@@ -45,8 +45,13 @@ path = path_dict[model_name]
 tokenzier_cls = tokenizer_dict[model_name]
 config = InternVLChatModel.config_class.from_pretrained(path)
 config.llm_config.num_hidden_layers = 2  # to reduce memory
-print(f"set llm_config.num_hidden_layers to {config.llm_config.num_hidden_layers} to reduce memory")
+# config.vision_config.num_hidden_layers = 2  # to reduce memory
+print(f"set llm_config.num_hidden_layers to {config.llm_config.num_hidden_layers}")
+print(f"set vision_config.num_hidden_layers to {config.vision_config.num_hidden_layers}")
 model = InternVLChatModel.from_pretrained(path, ms_dtype=ms_dtype, config=config)
+
+print('set training mode false to remove randomness')
+
 tokenizer = tokenzier_cls.from_pretrained(path)
 
 model.img_context_token_id = 92546
@@ -83,6 +88,7 @@ grad_fn = ms.ops.value_and_grad(forward, grad_position=None, weights=weight, has
 # 41 1321
 
 image_bs = pixel_values.shape[0]  # (bs_patch, c, h, w)
+bs, seq_len = input_ids.shape
 print(f'dynamic ViT batch size: {image_bs}')
 image_token_total_num = model.num_image_token * image_bs
 img_context_token_start = np.equal(input_ids_np.cpu().numpy(), model.img_context_token_id).argmax(axis=1)  # (bs,)
@@ -90,9 +96,14 @@ img_context_token_end = img_context_token_start + image_token_total_num
 img_context_token_start = img_context_token_start.tolist()
 img_context_token_end = img_context_token_end.tolist()
 # print(img_context_token_start, img_context_token_end)
-img_context_token_index = np.stack([img_context_token_start, img_context_token_end], axis=1).tolist()
-img_context_token_index = tuple(tuple(l) for l in img_context_token_index)
+range_array = np.arange(seq_len)
+img_context_token_index = [range_array[s:e] + bs_id * seq_len
+                                         for bs_id, (s, e) in enumerate(zip(img_context_token_start, img_context_token_end))]
+
+# img_context_token_index = np.stack([img_context_token_start, img_context_token_end], axis=1).tolist()
+# img_context_token_index = tuple(tuple(l) for l in img_context_token_index)
 # img_context_token_index = ((41, 1321),)
+img_context_token_index = ms.Tensor(np.concatenate(img_context_token_index))
 print(img_context_token_index)
 # img_context_token_index = ms.mutable(img_context_token_index)
 

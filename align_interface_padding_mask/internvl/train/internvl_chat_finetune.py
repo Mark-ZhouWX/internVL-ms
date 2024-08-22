@@ -20,6 +20,7 @@ from internvl.model.internvl_chat import (InternVisionConfig,
                                           InternVLChatModel)
 from internvl.model.internlm2.tokenization_internlm2 import InternLM2Tokenizer
 from internvl.patch.pad_data_collator import concat_pad_data_collator
+from internvl.patch.trainer_args_patch import patch_trainer_args_str
 from internvl.train.constants import (BOX_END_TOKEN, BOX_START_TOKEN,
                                       IMG_CONTEXT_TOKEN, IMG_END_TOKEN,
                                       IMG_START_TOKEN, QUAD_END_TOKEN,
@@ -41,8 +42,8 @@ from mindspore.dataset import GeneratorDataset
 from internvl.patch.adamw_patch import patch_adamw
 
 patch_adamw()
+patch_trainer_args_str()
 
-print(ms.get_context("mode"))
 
 # Apply necessary patches for the transformers library
 # replace_llama_rmsnorm_with_fused_rmsnorm()
@@ -76,8 +77,13 @@ class ModelArguments:
     """
     Arguments for specifying model, tokenizer, and configurations.
     """
+    # TODO move to training arguments
+    mindspore_context_mode: Optional[int] = field(
+        default=1,
+        metadata={'help': 'mindspore context mode'}
+    )
     model_name_or_path: Optional[str] = field(
-        default="/home/hukang/models/internVL/InternVL2-2B",
+        default="./pretrained/InternVL2-2B",
         metadata={'help': 'Path to pretrained model or model identifier from huggingface.co/models'}
     )
     vision_path: Optional[str] = field(
@@ -382,7 +388,10 @@ class LazySupervisedDataset:
         # )
         # return ret
         image_flags = [1] * num_patches
-        img_context_token_index = (img_context_token_start, img_context_token_end)
+        seq_len = len(ret['input_ids'][0])
+        assert img_context_token_end < seq_len
+        img_context_token_index = np.arange(seq_len)[img_context_token_start: img_context_token_end]
+        # img_context_token_index = (img_context_token_start, img_context_token_end)
 
         return (ret['input_ids'][0], ret['labels'][0], ret['attention_mask'][0], pixel_values,
                 image_flags, img_context_token_index)
@@ -646,6 +655,11 @@ def main():
     else:
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
+    mode = model_args.mindspore_context_mode
+    ms.set_context(mode=mode, device_target='Ascend')
+    if mode == 1:
+        ms.set_context(mode=mode, pynative_synchronize=True)
+
     # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
     # information sent is the one passed as arguments along with your Python/PyTorch versions.
     # send_example_telemetry('InternV-Chat', model_args, data_args)
@@ -657,6 +671,7 @@ def main():
         handlers=[logging.StreamHandler(sys.stdout)],
     )
 
+    logger.info(f'mindspore context mode: {mode}')
     # if training_args.should_log:
     #     # The default of training_args.log_level is passive, so we set log level at info here to have that default.
     #     transformers.utils.logging.set_verbosity_info()
@@ -723,8 +738,15 @@ def main():
         config.ps_version = model_args.ps_version
         config.min_dynamic_patch = data_args.min_dynamic_patch
         config.max_dynamic_patch = data_args.max_dynamic_patch
+        # config.llm_config.num_hidden_layers = 24
+        config.llm_config.num_hidden_layers = 2  # to reduce memory
+        # config.vision_config.num_hidden_layers = 2  # to reduce memory
+        logger.info(f'llm layer: {config.llm_config.num_hidden_layers}')
+        logger.info(f'vision layer: {config.vision_config.num_hidden_layers}')
+        config.return_dict = False
+        logger.info(f'return_dict are force to False when training=True')
         model = InternVLChatModel.from_pretrained(
-            model_args.model_name_or_path, ms_dtype=ms.float32, config=config)
+            model_args.model_name_or_path, ms_dtype=ms.float16, config=config)
 
     else:
         logger.info('Loading ViT-6B...')

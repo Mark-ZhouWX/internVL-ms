@@ -63,11 +63,13 @@ def concat_pad_data_collator(input_ids, labels, attention_mask, pixel_values,
         labels[idx] = temp_labels.astype(np.int32)
         attention_mask[idx] = input_ids[idx] != pad_id
 
+        img_context_token_index[idx] += max_item_length * idx
+
     input_ids =  np.stack(input_ids)
     labels = np.stack(labels)
     attention_mask = np.stack(attention_mask)
     pixel_values = np.concatenate(pixel_values)
     image_flags = np.concatenate(image_flags)
-    img_context_token_index = np.stack(img_context_token_index)
+    img_context_token_index = np.concatenate(img_context_token_index)
 
     return input_ids, labels, attention_mask, pixel_values, image_flags, img_context_token_index
