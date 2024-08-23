@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from typing import Dict, Optional
 
 import numpy as np
+from mindnlp.transformers import Qwen2Tokenizer, AutoTokenizer
+from mindnlp.utils.logging import set_verbosity
 
 from internvl.model.internlm2.modeling_internlm2 import InternLM2ForCausalLM
 from internvl.model.internvl_chat import (InternVisionConfig,
@@ -20,6 +22,7 @@ from internvl.model.internvl_chat import (InternVisionConfig,
                                           InternVLChatModel)
 from internvl.model.internlm2.tokenization_internlm2 import InternLM2Tokenizer
 from internvl.patch.pad_data_collator import concat_pad_data_collator
+from internvl.patch.qwen2_model_patch import patch_qwen2_model
 from internvl.patch.trainer_args_patch import patch_trainer_args_str
 from internvl.train.constants import (BOX_END_TOKEN, BOX_START_TOKEN,
                                       IMG_CONTEXT_TOKEN, IMG_END_TOKEN,
@@ -43,7 +46,7 @@ from internvl.patch.adamw_patch import patch_adamw
 
 patch_adamw()
 patch_trainer_args_str()
-
+patch_qwen2_model()
 
 # Apply necessary patches for the transformers library
 # replace_llama_rmsnorm_with_fused_rmsnorm()
@@ -677,9 +680,8 @@ def main():
     #     transformers.utils.logging.set_verbosity_info()
 
     log_level = training_args.get_process_log_level()
-    print(log_level)
-    logger.setLevel("INFO")
-    # set_verbosity(log_level)
+    logger.setLevel(log_level)
+    set_verbosity(log_level)
     # enable_default_handler()
     # enable_explicit_format()
 
@@ -710,10 +712,11 @@ def main():
     # Load pretrained model, tokenizer, and image processor
     tokenizer_path = model_args.model_name_or_path or model_args.llm_path
     logger.info(f'Loading Tokenizer: {tokenizer_path}')
-    tokenizer = InternLM2Tokenizer.from_pretrained(
+    tokenizer = AutoTokenizer.from_pretrained(
         tokenizer_path, add_eos_token=False, trust_remote_code=True, use_fast=False)
     tokenizer.tokenizer_path = tokenizer_path
     tokenizer.model_max_length = data_args.max_seq_length
+    logger.info(f'tokenizer max length: {tokenizer.model_max_length}')
     token_list = [IMG_START_TOKEN, IMG_END_TOKEN, IMG_CONTEXT_TOKEN,
                   QUAD_START_TOKEN, QUAD_END_TOKEN, REF_START_TOKEN,
                   REF_END_TOKEN, BOX_START_TOKEN, BOX_END_TOKEN]
@@ -740,11 +743,12 @@ def main():
         config.max_dynamic_patch = data_args.max_dynamic_patch
         # config.llm_config.num_hidden_layers = 24
         config.llm_config.num_hidden_layers = 2  # to reduce memory
-        # config.vision_config.num_hidden_layers = 2  # to reduce memory
+        config.vision_config.num_hidden_layers = 2  # to reduce memory
         logger.info(f'llm layer: {config.llm_config.num_hidden_layers}')
         logger.info(f'vision layer: {config.vision_config.num_hidden_layers}')
         config.return_dict = False
         logger.info(f'return_dict are force to False when training=True')
+        logger.info(f'Loading model from {model_args.model_name_or_path}')
         model = InternVLChatModel.from_pretrained(
             model_args.model_name_or_path, ms_dtype=ms.float16, config=config)
 

@@ -50,20 +50,22 @@ def pad_data_collator(features, pad_id=0):
 
 def concat_pad_data_collator(input_ids, labels, attention_mask, pixel_values,
                                                  image_flags, img_context_token_index, batch_info=None):
-    pad_id = 0
+    # pad_id = 0
 
     batch_lens = [feat.shape for feat in input_ids]
     max_item_length = max(batch_lens)[0]
     for idx in range(len(input_ids)):
-        temp_input_ids = np.array([pad_id] * max_item_length)
-        temp_input_ids[:input_ids[idx].shape[0]] = input_ids[idx]
-        input_ids[idx] = temp_input_ids
-        temp_labels = np.array([IGNORE_INDEX] * max_item_length)
-        temp_labels[:labels[idx].shape[0]] = labels[idx]
-        labels[idx] = temp_labels.astype(np.int32)
-        attention_mask[idx] = input_ids[idx] != pad_id
-
         img_context_token_index[idx] += max_item_length * idx
+        labels[idx] = labels[idx].astype(np.int32)
+
+        # No need to pad in static shape
+        # temp_input_ids = np.array([pad_id] * max_item_length)
+        # temp_input_ids[:input_ids[idx].shape[0]] = input_ids[idx]
+        # input_ids[idx] = temp_input_ids
+        # temp_labels = np.array([IGNORE_INDEX] * max_item_length)
+        # temp_labels[:labels[idx].shape[0]] = labels[idx]
+        # labels[idx] = temp_labels.astype(np.int32)
+        # attention_mask[idx] = input_ids[idx] != pad_id
 
     input_ids =  np.stack(input_ids)
     labels = np.stack(labels)

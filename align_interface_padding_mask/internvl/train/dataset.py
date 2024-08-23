@@ -415,12 +415,12 @@ def preprocess_mpt(
     # Tokenize conversations
     input_ids = tokenizer(
         conversations,
-        return_tensors='pt',
-        padding=False if group_by_length or use_packed_ds else 'max_length',
+        return_tensors='ms',
+        padding='max_length',
         max_length=tokenizer.model_max_length,
         truncation=True,
     ).input_ids
-    targets = input_ids.clone()
+    targets = input_ids.copy()
 
     # Mask targets. Only compute loss on the assistant outputs.
     sep = conv.sep + conv.roles[1]  # <|im_end|><|im_start|>assistant\n
@@ -510,12 +510,12 @@ def preprocess_phi3(
     tokenizer.padding_side = 'right'
     input_ids = tokenizer(
         conversations,
-        return_tensors='pt',
-        padding=False if group_by_length or use_packed_ds else 'max_length',
+        return_tensors='ms',
+        padding='max_length',
         max_length=tokenizer.model_max_length,
         truncation=True,
     ).input_ids
-    targets = input_ids.clone()
+    targets = input_ids.copy()
 
     # Mask targets. Only compute loss on the assistant outputs.
     sep = conv.sep + conv.roles[1]  # <|end|>\n<|assistant|>
@@ -620,7 +620,7 @@ def preprocess_internlm(
     input_ids = tokenizer(
         conversations,
         return_tensors='ms',
-        padding=False if group_by_length or use_packed_ds else 'max_length',
+        padding='max_length',  # static shape in graph mode
         max_length=tokenizer.model_max_length,
         truncation=True,
     ).input_ids

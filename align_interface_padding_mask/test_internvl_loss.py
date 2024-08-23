@@ -45,7 +45,7 @@ path = path_dict[model_name]
 tokenzier_cls = tokenizer_dict[model_name]
 config = InternVLChatModel.config_class.from_pretrained(path)
 config.llm_config.num_hidden_layers = 2  # to reduce memory
-# config.vision_config.num_hidden_layers = 2  # to reduce memory
+config.vision_config.num_hidden_layers = 2  # to reduce memory
 print(f"set llm_config.num_hidden_layers to {config.llm_config.num_hidden_layers}")
 print(f"set vision_config.num_hidden_layers to {config.vision_config.num_hidden_layers}")
 model = InternVLChatModel.from_pretrained(path, ms_dtype=ms_dtype, config=config)
