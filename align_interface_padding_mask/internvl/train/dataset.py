@@ -310,8 +310,8 @@ def preprocess(
     # Tokenize conversations
     input_ids = tokenizer(
         conversations,
-        return_tensors='pt',
-        padding=False if group_by_length or use_packed_ds else 'max_length',
+        return_tensors='np',
+        padding='max_length',
         max_length=tokenizer.model_max_length,
         truncation=True,
     ).input_ids
@@ -322,7 +322,7 @@ def preprocess(
     # Mask targets. Only compute loss on the assistant outputs.
     sep = conv.sep + conv.roles[1] + ': '
     for conversation, target in zip(conversations, targets):
-        total_len = int(target.ne(tokenizer.pad_token_id).sum())
+        total_len = int(np.not_equal(target, tokenizer.pad_token_id).sum())
 
         turns = conversation.split(conv.sep2)
         cur_len = 1
@@ -371,7 +371,7 @@ def preprocess(
     return dict(
         input_ids=input_ids,
         labels=targets,
-        attention_mask=input_ids.ne(tokenizer.pad_token_id),
+        attention_mask=np.not_equal(input_ids, tokenizer.pad_token_id),
     )
 
 
@@ -415,7 +415,7 @@ def preprocess_mpt(
     # Tokenize conversations
     input_ids = tokenizer(
         conversations,
-        return_tensors='ms',
+        return_tensors='np',
         padding='max_length',
         max_length=tokenizer.model_max_length,
         truncation=True,
@@ -425,7 +425,7 @@ def preprocess_mpt(
     # Mask targets. Only compute loss on the assistant outputs.
     sep = conv.sep + conv.roles[1]  # <|im_end|><|im_start|>assistant\n
     for conversation, target in zip(conversations, targets):
-        total_len = int(target.ne(tokenizer.pad_token_id).sum())
+        total_len = int(np.not_equal(target, tokenizer.pad_token_id).sum())
 
         turns = conversation.split(conv.sep)
         re_turns = [conv.sep.join(turns[:3])]  # system + user + gpt
@@ -465,7 +465,7 @@ def preprocess_mpt(
     return dict(
         input_ids=input_ids,
         labels=targets,
-        attention_mask=input_ids.ne(tokenizer.pad_token_id),
+        attention_mask=np.not_equal(input_ids, tokenizer.pad_token_id),
     )
 
 
@@ -510,7 +510,7 @@ def preprocess_phi3(
     tokenizer.padding_side = 'right'
     input_ids = tokenizer(
         conversations,
-        return_tensors='ms',
+        return_tensors='np',
         padding='max_length',
         max_length=tokenizer.model_max_length,
         truncation=True,
@@ -520,7 +520,7 @@ def preprocess_phi3(
     # Mask targets. Only compute loss on the assistant outputs.
     sep = conv.sep + conv.roles[1]  # <|end|>\n<|assistant|>
     for conversation, target in zip(conversations, targets):
-        total_len = int(target.ne(int(tokenizer.pad_token_id)).sum())
+        total_len = int(np.not_equal(target, tokenizer.pad_token_id).sum())
 
         turns = conversation.split(conv.sep)
         re_turns = [conv.sep.join(turns[:3])]  # system + user + gpt
@@ -574,7 +574,7 @@ def preprocess_phi3(
     return dict(
         input_ids=input_ids,
         labels=targets,
-        attention_mask=input_ids.ne(tokenizer.pad_token_id),
+        attention_mask=np.not_equal(input_ids, tokenizer.pad_token_id),
     )
 
 
@@ -619,7 +619,7 @@ def preprocess_internlm(
     # Tokenize conversations
     input_ids = tokenizer(
         conversations,
-        return_tensors='ms',
+        return_tensors='np',
         padding='max_length',  # static shape in graph mode
         max_length=tokenizer.model_max_length,
         truncation=True,
@@ -627,7 +627,7 @@ def preprocess_internlm(
     targets = input_ids.copy()
 
     for conversation, target in zip(conversations, targets):
-        total_len = int(target.ne(tokenizer.pad_token_id).sum())  # 浦语里面 pad_token_id = eos_token_id
+        total_len = int(np.not_equal(target, tokenizer.pad_token_id).sum())  # 浦语里面 pad_token_id = eos_token_id
         cur_len = 1
         target[:cur_len] = IGNORE_TOKEN_ID  # <s>
         parts = conversation.split(conv.roles[1])  # [UNUSED_TOKEN_146]assistant\n
@@ -664,7 +664,7 @@ def preprocess_internlm(
     return dict(
         input_ids=input_ids,
         labels=targets,
-        attention_mask=input_ids.ne(tokenizer.pad_token_id),
+        attention_mask=np.not_equal(input_ids, tokenizer.pad_token_id),
     )
 
 

@@ -23,7 +23,6 @@ from internvl.model.internvl_chat import (InternVisionConfig,
 from internvl.model.internlm2.tokenization_internlm2 import InternLM2Tokenizer
 from internvl.patch.pad_data_collator import concat_pad_data_collator
 from internvl.patch.qwen2_model_patch import patch_qwen2_model
-from internvl.patch.trainer_args_patch import patch_trainer_args_str
 from internvl.train.constants import (BOX_END_TOKEN, BOX_START_TOKEN,
                                       IMG_CONTEXT_TOKEN, IMG_END_TOKEN,
                                       IMG_START_TOKEN, QUAD_END_TOKEN,
@@ -45,7 +44,6 @@ from mindspore.dataset import GeneratorDataset
 from internvl.patch.adamw_patch import patch_adamw
 
 patch_adamw()
-patch_trainer_args_str()
 patch_qwen2_model()
 
 # Apply necessary patches for the transformers library
@@ -438,7 +436,7 @@ class LazySupervisedDataset:
             labels=ret['labels'][0],
             attention_mask=ret['attention_mask'][0],
             pixel_values=pixel_values,
-            image_flags=ms.tensor([1] * num_patches, dtype=ms.int64)
+            image_flags=np.array([1] * num_patches, dtype=np.int64)
         )
         return ret
 
@@ -742,8 +740,8 @@ def main():
         config.min_dynamic_patch = data_args.min_dynamic_patch
         config.max_dynamic_patch = data_args.max_dynamic_patch
         # config.llm_config.num_hidden_layers = 24
-        config.llm_config.num_hidden_layers = 2  # to reduce memory
-        config.vision_config.num_hidden_layers = 2  # to reduce memory
+        # config.llm_config.num_hidden_layers = 2  # to reduce memory
+        # config.vision_config.num_hidden_layers = 2  # to reduce memory
         logger.info(f'llm layer: {config.llm_config.num_hidden_layers}')
         logger.info(f'vision layer: {config.vision_config.num_hidden_layers}')
         config.return_dict = False

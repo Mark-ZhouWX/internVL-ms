@@ -42,7 +42,6 @@ python internvl/train/internvl_chat_finetune.py \
   --freeze_mlp False \
   --freeze_backbone True \
   --vision_select_layer -1 \
-  --dataloader_num_workers 4 \
   --bf16 True \
   --num_train_epochs 5 \
   --per_device_train_batch_size ${PER_DEVICE_BATCH_SIZE} \
@@ -56,7 +55,7 @@ python internvl/train/internvl_chat_finetune.py \
   --warmup_ratio 0.03 \
   --lr_scheduler_type "cosine" \
   --logging_steps 1 \
-  --max_seq_length 4096 \
+  --max_seq_length 2048 \
   --do_train True \
   --grad_checkpoint False \
   --group_by_length False \
