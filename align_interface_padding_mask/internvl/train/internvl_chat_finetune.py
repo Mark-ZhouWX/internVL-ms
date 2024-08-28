@@ -41,9 +41,7 @@ import mindspore as ms
 from mindnlp.engine import TrainingArguments, Trainer
 from mindspore.dataset import GeneratorDataset
 
-from internvl.patch.adamw_patch import patch_adamw
 
-patch_adamw()
 patch_qwen2_model()
 
 # Apply necessary patches for the transformers library
