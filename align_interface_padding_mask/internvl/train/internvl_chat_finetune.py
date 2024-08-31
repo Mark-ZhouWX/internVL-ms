@@ -357,7 +357,7 @@ class LazySupervisedDataset:
             images = [image]
         # Apply the transformation to each image and stack the results into a tensor
         pixel_values = [np.squeeze(transform(image)) for image in images]
-        pixel_values = ms.tensor(pixel_values)
+        pixel_values = np.stack(pixel_values)
         # Ensure that there is only one patch if dynamic image size is not enabled
         num_patches = pixel_values.shape[0]
         if not self.dynamic_image_size:
@@ -392,8 +392,18 @@ class LazySupervisedDataset:
         img_context_token_index = np.arange(seq_len)[img_context_token_start: img_context_token_end]
         # img_context_token_index = (img_context_token_start, img_context_token_end)
 
-        return (ret['input_ids'][0], ret['labels'][0], ret['attention_mask'][0], pixel_values,
-                image_flags, img_context_token_index)
+        ret = dict(
+            input_ids=ret['input_ids'][0],
+            labels=ret['labels'][0].astype(np.int32),
+            attention_mask=ret['attention_mask'][0],
+            pixel_values=pixel_values,
+            image_flags=np.array(image_flags, dtype=np.int64),
+            img_context_token_index = img_context_token_index
+        )
+
+        return ret
+        # return (ret['input_ids'][0], ret['labels'][0], ret['attention_mask'][0], pixel_values,
+        #         image_flags, img_context_token_index)
 
     def multi_modal_multi_image_get_item(self, data_item):
         # Build transformation function
@@ -618,13 +628,6 @@ def build_datasets(
             normalize_type=normalize_type,
             random_seed=ds_idx,
         )
-        # dataset = GeneratorDataset(source=dataset, column_names=["features"])
-        dataset = GeneratorDataset(source=dataset,
-                                   column_names=["input_ids", "labels", "attention_mask", "pixel_values",
-                                                 "image_flags", "img_context_token_index"])
-        dataset = dataset.batch(batch_size=1, per_batch_map=concat_pad_data_collator,
-                                input_columns=["input_ids", "labels", "attention_mask", "pixel_values",
-                                                 "image_flags", "img_context_token_index"])
         logger.info(f'Add dataset: {ds_name} with length: {len(dataset)}')
         datasets.append(dataset)
         if data_args.use_data_resampling:
@@ -823,7 +826,8 @@ def main():
         dynamic_image_size=data_args.dynamic_image_size, use_thumbnail=data_args.use_thumbnail,
         min_dynamic_patch=data_args.min_dynamic_patch, max_dynamic_patch=data_args.max_dynamic_patch,
         normalize_type=data_args.normalize_type)
-
+    training_args.column_name_collate = ["input_ids", "labels", "attention_mask", "pixel_values",
+                                                 "image_flags", "img_context_token_index"]
 
     def _freeze_params(module):
         for param in module.get_parameters():
@@ -875,7 +879,8 @@ def main():
         args=training_args,
         train_dataset=train_dataset if training_args.do_train else None,
         eval_dataset=None,
-        tokenizer=tokenizer
+        tokenizer=tokenizer,
+        data_collator=concat_pad_data_collator
     )
 
     # Training

@@ -1,3 +1,5 @@
+from typing import List, Dict
+
 import numpy as np
 import mindspore as ms
 
@@ -48,15 +50,18 @@ def pad_data_collator(features, pad_id=0):
     return batch
 
 
-def concat_pad_data_collator(input_ids, labels, attention_mask, pixel_values,
-                                                 image_flags, img_context_token_index, batch_info=None):
+def concat_pad_data_collator(features: List[Dict[str, ms.Tensor]], batch_info):
     # pad_id = 0
 
-    batch_lens = [feat.shape for feat in input_ids]
+    batch_size = len(features)
+
+    batch_lens = [feat['input_ids'].shape for feat in features]
+    # all element of batch_lens is the same in static shape
     max_item_length = max(batch_lens)[0]
-    for idx in range(len(input_ids)):
-        img_context_token_index[idx] += max_item_length * idx
-        labels[idx] = labels[idx].astype(np.int32)
+    for idx in range(batch_size):
+        feat = features[idx]
+        feat['img_context_token_index'] += max_item_length * idx
+        # feat['labels'] = feat['labels'].astype(np.int32)
 
         # No need to pad in static shape
         # temp_input_ids = np.array([pad_id] * max_item_length)
@@ -67,11 +72,11 @@ def concat_pad_data_collator(input_ids, labels, attention_mask, pixel_values,
         # labels[idx] = temp_labels.astype(np.int32)
         # attention_mask[idx] = input_ids[idx] != pad_id
 
-    input_ids =  np.stack(input_ids)
-    labels = np.stack(labels)
-    attention_mask = np.stack(attention_mask)
-    pixel_values = np.concatenate(pixel_values)
-    image_flags = np.concatenate(image_flags)
-    img_context_token_index = np.concatenate(img_context_token_index)
+    input_ids =  np.stack([feat['input_ids'] for feat in features])
+    labels = np.stack([feat['labels'] for feat in features])
+    attention_mask = np.stack([feat['attention_mask'] for feat in features])
+    pixel_values = np.concatenate([feat['pixel_values'] for feat in features])
+    image_flags = np.concatenate([feat['image_flags'] for feat in features])
+    img_context_token_index = np.concatenate([feat['img_context_token_index'] for feat in features])
 
     return input_ids, labels, attention_mask, pixel_values, image_flags, img_context_token_index
