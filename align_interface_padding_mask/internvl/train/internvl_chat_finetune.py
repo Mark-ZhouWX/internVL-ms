@@ -14,6 +14,7 @@ from typing import Dict, Optional
 import numpy as np
 from mindnlp.transformers import Qwen2Tokenizer, AutoTokenizer
 from mindnlp.utils.logging import set_verbosity
+from mindspore.amp import DynamicLossScaler
 
 from internvl.model.internlm2.modeling_internlm2 import InternLM2ForCausalLM
 from internvl.model.internvl_chat import (InternVisionConfig,
@@ -880,7 +881,8 @@ def main():
         train_dataset=train_dataset if training_args.do_train else None,
         eval_dataset=None,
         tokenizer=tokenizer,
-        data_collator=concat_pad_data_collator
+        data_collator=concat_pad_data_collator,
+        loss_scaler=DynamicLossScaler(scale_value=2 ** 12, scale_factor=2, scale_window=1000)
     )
 
     # Training

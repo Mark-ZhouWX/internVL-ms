@@ -7,9 +7,6 @@ GRADIENT_ACC=$((BATCH_SIZE / PER_DEVICE_BATCH_SIZE / GPUS))
 
 
 export PYTHONPATH="${PYTHONPATH}:$(pwd)"
-export MASTER_PORT=34229
-export TF_CPP_MIN_LOG_LEVEL=3
-export LAUNCHER=pytorch
 
 OUTPUT_DIR='work_dirs/internvl_chat_v2_0/internvl2_1b_qwen2_0_5b_dynamic_res_2nd_finetune_full'
 
@@ -22,16 +19,18 @@ fi
 # gradient accumulation steps: 4
 # total batch size: 128
 # epoch: 1
-#torchrun \
-#  --nnodes=1 \
-#  --node_rank=0 \
-#  --master_addr=127.0.0.1 \
-#  --nproc_per_node=${GPUS} \
-#  --master_port=${MASTER_PORT} \
+
+export ASCEND_RT_VISIBLE_DEVICES=6,7
+#
+msrun --bind_core=True \
+  --master_port=8204 \
+  --worker_num=2 \
+  --local_worker_num=2 \
 python internvl/train/internvl_chat_finetune.py \
+  --mindspore_context_mode 0 \
   --model_name_or_path "./pretrained/InternVL2-1B" \
   --conv_style "Hermes-2" \
-  --output_dir ${OUTPUT_DIR} \
+  --output_dir 'work_dirs/internvl_chat_v2_0/internvl2_1b_qwen2_0_5b_dynamic_res_2nd_finetune_full' \
   --meta_path "./data.json" \
   --overwrite_output_dir True \
   --force_image_size 448 \
@@ -44,8 +43,8 @@ python internvl/train/internvl_chat_finetune.py \
   --vision_select_layer -1 \
   --bf16 True \
   --num_train_epochs 5 \
-  --per_device_train_batch_size ${PER_DEVICE_BATCH_SIZE} \
-  --gradient_accumulation_steps ${GRADIENT_ACC} \
+  --per_device_train_batch_size 1 \
+  --gradient_accumulation_steps 1 \
   --evaluation_strategy "no" \
   --save_strategy "steps" \
   --save_steps 200 \
@@ -62,4 +61,5 @@ python internvl/train/internvl_chat_finetune.py \
   --dynamic_image_size False \
   --use_thumbnail True \
   --ps_version 'v2' \
-  2>&1 | tee -a "${OUTPUT_DIR}/training_log.txt"
+  --log_level info \
+  --use_parallel True
