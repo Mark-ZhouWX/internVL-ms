@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Optional
 
 import numpy as np
+from mindnlp.engine.trainer.base import init_distributed
 from mindnlp.transformers import Qwen2Tokenizer, AutoTokenizer
 from mindnlp.utils.logging import set_verbosity
 from mindspore.amp import DynamicLossScaler
@@ -657,6 +658,8 @@ def main():
         model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     else:
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+
+    init_distributed(training_args.data_parallel_mode)
 
     mode = model_args.mindspore_context_mode
     ms.set_context(mode=mode, device_target='Ascend')

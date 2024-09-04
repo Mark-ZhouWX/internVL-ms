@@ -62,4 +62,4 @@ python internvl/train/internvl_chat_finetune.py \
   --use_thumbnail True \
   --ps_version 'v2' \
   --log_level info \
-  --use_parallel True
+  --data_parallel_mode vanilla
