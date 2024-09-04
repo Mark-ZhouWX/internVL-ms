@@ -25,6 +25,7 @@ from internvl.model.internvl_chat import (InternVisionConfig,
 from internvl.model.internlm2.tokenization_internlm2 import InternLM2Tokenizer
 from internvl.patch.pad_data_collator import concat_pad_data_collator
 from internvl.patch.qwen2_model_patch import patch_qwen2_model
+from internvl.patch.adamw_patch import patch_adamw
 from internvl.train.constants import (BOX_END_TOKEN, BOX_START_TOKEN,
                                       IMG_CONTEXT_TOKEN, IMG_END_TOKEN,
                                       IMG_START_TOKEN, QUAD_END_TOKEN,
@@ -43,7 +44,7 @@ import mindspore as ms
 from mindnlp.engine import TrainingArguments, Trainer
 from mindspore.dataset import GeneratorDataset
 
-
+patch_adamw()
 patch_qwen2_model()
 
 # Apply necessary patches for the transformers library

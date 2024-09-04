@@ -1,53 +1,38 @@
 from mindspore.ops import functional as F, composite as C, operations as P
-from mindspore import ops
-from mindspore.experimental.optim import AdamW
+from mindspore.mint.optim import AdamW
 
-
-def prepare_func(lr, weight_decay, state_step, beta1, beta2):
-    weight_decay_new = 1 - lr * weight_decay
-    bias_correction1 = 1 - op_pow(beta1, state_step)
-    bias_correction2 = 1 - op_pow(beta2, state_step)
-    step_size = lr / bias_correction1
-    bias_correction2_sqrt = op_sqrt(bias_correction2)
-    return weight_decay_new, step_size, bias_correction2_sqrt
-
-
-op_mul = P.Mul()
-op_pow = P.Pow()
-op_sqrt = P.Sqrt()
-op_maximum = P.Maximum()
+_optim_adamw_opt = C.MultitypeFuncGraph("optim_adamw_opt")
 hyper_map = C.HyperMap()
-_adamw_opt = C.MultitypeFuncGraph("adamw_opt")
-@_adamw_opt.register("Tensor", "Tensor", "Bool", "Float", "Tensor", "Float", "Float", "Tensor", "Tensor",
-                     "Tensor", "Tensor", "Tensor")
-def _run_adamw_opt(weight_decay_new, step_size, amsgrad, eps, bias_correction2_sqrt, beta1, beta2, param, grad,
-                   exp_avg, exp_avg_sq, max_exp_avg_sq):
+
+@_optim_adamw_opt.register("Function", "Float", "Float", "Float", "Float", "Float", "Tensor", "Bool", "Bool", "Tensor",
+                           "Tensor", "Tensor", "Tensor", "Tensor")
+def _run_optim_adamw_opt(opt, beta1, beta2, lr, eps, weight_decay, step, amsgrad, maximize, parameters, grads, exp_avg,
+                         exp_avg_sq, max_exp_avg_sq):
     """Apply adamw optimizer to the weight parameter."""
     success = True
-    next_param = op_mul(param, weight_decay_new)
-    F.assign(exp_avg, op_mul(exp_avg, beta1) + op_mul(grad, 1 - beta1))
-    F.assign(exp_avg_sq, ops.addcmul(op_mul(exp_avg_sq, beta2), grad, grad, 1 - beta2))
-    if amsgrad:
-        next_max_exp_avg = op_maximum(max_exp_avg_sq, exp_avg_sq)
-        denom = op_sqrt(next_max_exp_avg) / bias_correction2_sqrt + eps
-        F.assign(max_exp_avg_sq, next_max_exp_avg)
-    else:
-        denom = op_sqrt(exp_avg_sq) / bias_correction2_sqrt + eps
-    return_param = next_param - op_mul(exp_avg / denom, step_size)
-    F.assign(param, return_param.astype(param.dtype))   # 无法自动转换，需要显示指定dtype
+    opt(parameters, exp_avg, exp_avg_sq, max_exp_avg_sq, P.Cast()(grads, F.dtype(parameters)), step, lr, beta1, beta2,
+        weight_decay, eps, amsgrad, maximize)
     return success
 
-def implementation(self, lr, weight_decay, beta1, beta2, amsgrad, eps, grads, start_id, end_id):
-    """Extract the common computing part for acceleration"""
-    weight_decay_new, step_size, bias_correction2_sqrt = prepare_func(lr, weight_decay,
-                                                                      self.state_step, beta1, beta2)
-    self.hyper_map(F.partial(_adamw_opt, weight_decay_new, step_size, amsgrad,
-                             eps, bias_correction2_sqrt, beta1, beta2),
-                   self.parameters[start_id: end_id], grads, self.exp_avg[start_id: end_id],
-                   self.exp_avg_sq[start_id: end_id], self.max_exp_avg_sq[start_id: end_id])
+def construct(self, gradients):
+    self.assignadd(self.state_step, self.increase_tensor)
+    for group_id, group in enumerate(self.param_groups):
+        beta1, beta2 = group['betas']
+        maximize = group.get("maximize")
+        start_id = self.group_start_id[group_id]
+        end_id = self.group_start_id[group_id + 1]
+        lr = group.get("lr")
+        grads = tuple(gradients[start_id: end_id])
+        print("----ignore---", lr.value())
+
+        self.hyper_map(F.partial(_optim_adamw_opt, self.adamw_opt, beta1, beta2, float(lr),
+                                 group.get("eps"), group.get("weight_decay"), self.state_step,
+                                 group.get("amsgrad"), maximize),
+                       self.parameters[start_id: end_id], grads, self.exp_avg[start_id: end_id],
+                       self.exp_avg_sq[start_id: end_id], self.max_exp_avg_sq[start_id: end_id])
     return True
 
 
 
 def patch_adamw():
-    AdamW.implementation = implementation
+    AdamW.construct = construct
