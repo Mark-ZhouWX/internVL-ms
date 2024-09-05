@@ -20,7 +20,7 @@ ms.set_context(mode=mode, device_target='Ascend')
 print(f'mode: {mode}')
 
 #
-model_name = "InternVL2-2B"
+model_name = "InternVL2-1B"
 ms_dtype = ms.float16
 print(f'model name : {model_name}, dtype: {ms_dtype}')
 
@@ -75,7 +75,7 @@ for d in data[1:]:
 
 
 weight = model.trainable_params()
-optimizer = nn.SGD(weight, learning_rate=0.001)
+optimizer = nn.SGD(weight, learning_rate=0.0001)
 
 def forward(pixel_values=None, input_ids=None, img_context_token_index=None, attention_mask=None,
                        image_flags=None, labels=None, return_dict=None):
