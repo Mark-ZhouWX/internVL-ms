@@ -42,7 +42,7 @@ python internvl/train/internvl_chat_finetune.py \
   --freeze_backbone True \
   --vision_select_layer -1 \
   --bf16 True \
-  --num_train_epochs 5 \
+  --num_train_epochs 1 \
   --per_device_train_batch_size 1 \
   --gradient_accumulation_steps 1 \
   --evaluation_strategy "no" \

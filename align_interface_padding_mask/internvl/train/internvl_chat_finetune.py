@@ -754,7 +754,7 @@ def main():
         logger.info(f'return_dict are force to False when training=True')
         logger.info(f'Loading model from {model_args.model_name_or_path}')
         model = InternVLChatModel.from_pretrained(
-            model_args.model_name_or_path, ms_dtype=ms.float16, config=config)
+            model_args.model_name_or_path, ms_dtype=ms.float32, config=config)
 
     else:
         logger.info('Loading ViT-6B...')
