@@ -34,7 +34,7 @@ class DropPath(nn.Cell):
         if self.keep_prob == 1.0 or not self.training:
             return x
         shape = (x.shape[0],) + (1,) * (x.ndim - 1)
-        random_tensor = self.dropout(ones(shape, dtype=x.dtype))
+        random_tensor = self.dropout(ops.ones(shape, dtype=x.dtype))
         if not self.scale_by_keep:
             random_tensor = ops.mul(random_tensor, self.keep_prob)
         return x * random_tensor
