@@ -1,8 +1,8 @@
 set -x
 
 NPUS=${GPUS:-1}
-BATCH_SIZE=${BATCH_SIZE:-128}
-PER_DEVICE_BATCH_SIZE=${PER_DEVICE_BATCH_SIZE:-4}
+BATCH_SIZE=${BATCH_SIZE:-1}
+PER_DEVICE_BATCH_SIZE=${PER_DEVICE_BATCH_SIZE:-1}
 GRADIENT_ACC=$((BATCH_SIZE / PER_DEVICE_BATCH_SIZE / NPUS))
 
 
@@ -17,19 +17,14 @@ if [ ! -d "$OUTPUT_DIR" ]; then
   mkdir -p "$OUTPUT_DIR"
 fi
 
-# number of npus: 8
-# batch size per npu: 4
-# gradient accumulation steps: 4
-# total batch size: 128
-# epoch: 1
-#torchrun \
-#  --nnodes=1 \
-#  --node_rank=0 \
-#  --master_addr=127.0.0.1 \
-#  --nproc_per_node=${GPUS} \
-#  --master_port=${MASTER_PORT} \
+export ASCEND_RT_VISIBLE_DEVICES=6,7
+#
+msrun --bind_core=True \
+  --master_port=8205 \
+  --worker_num=2 \
+  --local_worker_num=2 \
 python  internvl/train/internvl_chat_finetune.py \
-  --model_name_or_path "/home/hukang/models/internVL/InternVL2-2B" \
+  --model_name_or_path "pretrained/InternVL2-2B" \
   --conv_style "internlm2-chat" \
   --output_dir ${OUTPUT_DIR} \
   --meta_path "data.json" \
@@ -55,11 +50,13 @@ python  internvl/train/internvl_chat_finetune.py \
   --warmup_ratio 0.03 \
   --lr_scheduler_type "cosine" \
   --logging_steps 1 \
-  --max_seq_length 4096 \
+  --max_seq_length 2048 \
   --do_train True \
   --grad_checkpoint True \
   --group_by_length True \
   --dynamic_image_size True \
   --use_thumbnail True \
   --ps_version 'v2' \
+  --mindspore_context_mode 0 \
+  --data_parallel_mode vanilla \
   2>&1 | tee -a "${OUTPUT_DIR}/training_log.txt"
