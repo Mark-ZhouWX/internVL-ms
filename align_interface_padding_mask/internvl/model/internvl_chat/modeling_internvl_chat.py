@@ -142,13 +142,12 @@ class InternVLChatModel(PreTrainedModel):
             attention_mask=attention_mask,
             position_ids=position_ids,
             past_key_values=past_key_values,
-            labels=labels,
             use_cache=use_cache,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
-        logits = outputs[1]
+        logits = outputs[0]
 
         loss = None
         if labels is not None:
@@ -161,14 +160,12 @@ class InternVLChatModel(PreTrainedModel):
             shift_labels = shift_labels.view(-1)
             # Enable model parallelism
             # shift_labels = shift_labels.to(shift_logits.device)
-            loss = loss_fct(shift_logits, shift_labels)
+            loss = loss_fct(shift_logits.astype(ms.float32), shift_labels)
             if ignore_flag:
                 loss = loss * 0.0
 
         if not return_dict:
-            output = (logits,) + outputs[1:]
             return loss, logits
-            # return (loss,) + output if loss is not None else output
 
         return CausalLMOutputWithPast(
             loss=loss,

@@ -42,7 +42,7 @@ from transformers import HfArgumentParser, set_seed
 
 import mindspore as ms
 from mindnlp.engine import TrainingArguments, Trainer
-from mindspore.dataset import GeneratorDataset
+from mindspore import amp
 
 patch_adamw()
 patch_qwen2_model()
@@ -878,6 +878,11 @@ def main():
     # Initialize our Trainer
     # if model_args.use_custom_trainer:
     #     replace_create_optimizer()
+
+    if training_args.bf16:
+        model = amp.auto_mixed_precision(model, "O2", dtype=ms.bfloat16)
+    elif training_args.fp16:
+        model = amp.auto_mixed_precision(model, "O2", dtype=ms.float16)
 
     trainer = Trainer(
         model=model,

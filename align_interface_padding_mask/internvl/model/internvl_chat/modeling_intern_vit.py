@@ -71,13 +71,12 @@ class InternVisionEmbeddings(nn.Cell):
         return pos_embed
 
     def construct(self, pixel_values: ms.Tensor) -> ms.Tensor:
-        target_dtype = self.patch_embedding.weight.dtype
         patch_embeds = self.patch_embedding(pixel_values)  # shape = [*, channel, width, height]
         batch_size, _, height, width = patch_embeds.shape
         patch_embeds = patch_embeds.flatten(start_dim=2).swapaxes(1, 2)
-        class_embeds = self.class_embedding.broadcast_to((batch_size, 1, -1)).to(target_dtype)
-        embeddings = ops.cat([class_embeds, patch_embeds], axis=1)
-        embeddings = embeddings + self.position_embedding.to(target_dtype)
+        class_embeds = self.class_embedding.broadcast_to((batch_size, 1, -1))
+        embeddings = ops.cat([class_embeds.astype(patch_embeds.dtype), patch_embeds], axis=1)
+        embeddings = embeddings + self.position_embedding
         return embeddings
 
 
@@ -121,7 +120,7 @@ class InternAttention(nn.Cell):
         attn = ops.softmax(attn, axis=-1)
         attn = self.attn_drop(attn)
 
-        x = (attn @ v).swapaxes(1, 2).reshape(B, N, C)
+        x = (attn.astype(v.dtype) @ v).swapaxes(1, 2).reshape(B, N, C)
         x = self.proj(x)
         x = self.proj_drop(x)
         return x
