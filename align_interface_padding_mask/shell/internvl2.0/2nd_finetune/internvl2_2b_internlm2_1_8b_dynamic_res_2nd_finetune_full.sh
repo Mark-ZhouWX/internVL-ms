@@ -58,5 +58,6 @@ python  internvl/train/internvl_chat_finetune.py \
   --use_thumbnail True \
   --ps_version 'v2' \
   --mindspore_context_mode 0 \
-  --data_parallel_mode vanilla \
+  --data_parallel_mode zero1 \
+  --max_device_memory "59GB"
   2>&1 | tee -a "${OUTPUT_DIR}/training_log.txt"

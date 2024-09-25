@@ -1,6 +1,3 @@
-from internvl.patch.generator_mixin_patch import patch_generator_mixin
-from internvl.patch.modeling_attn_mask_utils_patch import patch_attn_mask
-
 import mindspore as ms
 
 from data_process import load_image
@@ -11,8 +8,6 @@ mode = 0
 ms.set_context(mode=mode, device_target='Ascend')
 print(f'mode: {mode}')
 
-patch_attn_mask()
-patch_generator_mixin()
 
 path = "/home/hukang/models/internVL/InternVL2-2B/"
 

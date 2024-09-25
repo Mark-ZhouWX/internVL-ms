@@ -84,6 +84,10 @@ class ModelArguments:
         default=1,
         metadata={'help': 'mindspore context mode'}
     )
+    max_device_memory: Optional[str] = field(
+        default=None,
+        metadata={'help': 'e.g. `29GB` for 910b4, `59GB` for 910b1'}
+    )
     model_name_or_path: Optional[str] = field(
         default="./pretrained/InternVL2-2B",
         metadata={'help': 'Path to pretrained model or model identifier from huggingface.co/models'}
@@ -660,12 +664,15 @@ def main():
     else:
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
-    init_distributed(training_args.data_parallel_mode)
 
     mode = model_args.mindspore_context_mode
     ms.set_context(mode=mode, device_target='Ascend')
     if mode == 1:
         ms.set_context(mode=mode, pynative_synchronize=True)
+    if model_args.max_device_memory is not None:
+        ms.set_context(max_device_memory=model_args.max_device_memory)
+
+    init_distributed(training_args.data_parallel_mode)
 
     # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
     # information sent is the one passed as arguments along with your Python/PyTorch versions.
@@ -879,9 +886,17 @@ def main():
     # if model_args.use_custom_trainer:
     #     replace_create_optimizer()
 
+    # freeze的参数转换为低精度
+    def _convert_half(module, dtype):
+        for param in module.get_parameters():
+            if not param.requires_grad:
+                param.set_dtype(dtype)
+
     if training_args.bf16:
+        _convert_half(model, dtype=ms.bfloat16)
         model = amp.auto_mixed_precision(model, "O2", dtype=ms.bfloat16)
     elif training_args.fp16:
+        _convert_half(model, dtype=ms.float16)
         model = amp.auto_mixed_precision(model, "O2", dtype=ms.float16)
 
     trainer = Trainer(
