@@ -20,12 +20,12 @@ fi
 # total batch size: 128
 # epoch: 1
 
-export ASCEND_RT_VISIBLE_DEVICES=6,7
+export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3
 #
 msrun --bind_core=True \
   --master_port=8204 \
-  --worker_num=2 \
-  --local_worker_num=2 \
+  --worker_num=4 \
+  --local_worker_num=4 \
 python internvl/train/internvl_chat_finetune.py \
   --mindspore_context_mode 0 \
   --model_name_or_path "./pretrained/InternVL2-1B" \
@@ -36,7 +36,7 @@ python internvl/train/internvl_chat_finetune.py \
   --force_image_size 448 \
   --max_dynamic_patch 6 \
   --down_sample_ratio 0.5 \
-  --drop_path_rate 0.1 \
+  --drop_path_rate 0.0 \
   --freeze_llm False \
   --freeze_mlp False \
   --freeze_backbone True \
@@ -49,7 +49,7 @@ python internvl/train/internvl_chat_finetune.py \
   --save_strategy "steps" \
   --save_steps 200 \
   --save_total_limit 1 \
-  --learning_rate 4e-5 \
+  --learning_rate 4e-7 \
   --weight_decay 0.01 \
   --warmup_ratio 0.03 \
   --lr_scheduler_type "cosine" \
@@ -61,5 +61,6 @@ python internvl/train/internvl_chat_finetune.py \
   --dynamic_image_size False \
   --use_thumbnail True \
   --ps_version 'v2' \
-  --log_level info \
+  --log_level debug \
+  --disable_tqdm True \
   --data_parallel_mode vanilla

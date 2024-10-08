@@ -14,6 +14,7 @@ from typing import Dict, Optional
 import numpy as np
 from mindnlp.engine.trainer.base import init_distributed
 from mindnlp.transformers import Qwen2Tokenizer, AutoTokenizer
+from mindnlp.transformers.models.qwen2.modeling_qwen2 import Qwen2RMSNorm, Qwen2Attention, Qwen2MLP
 from mindnlp.utils.logging import set_verbosity
 from mindspore.amp import DynamicLossScaler
 
@@ -24,6 +25,7 @@ from internvl.model.internvl_chat import (InternVisionConfig,
                                           InternVLChatModel)
 from internvl.model.internlm2.tokenization_internlm2 import InternLM2Tokenizer
 from internvl.patch.pad_data_collator import concat_pad_data_collator
+from internvl.patch.patch_outputf16 import patch_outputf16
 from internvl.patch.qwen2_model_patch import patch_qwen2_model
 from internvl.patch.adamw_patch import patch_adamw
 from internvl.train.constants import (BOX_END_TOKEN, BOX_START_TOKEN,
@@ -46,7 +48,7 @@ from mindspore import amp
 
 patch_adamw()
 patch_qwen2_model()
-
+patch_outputf16()
 # Apply necessary patches for the transformers library
 # replace_llama_rmsnorm_with_fused_rmsnorm()
 # replace_train_sampler()
@@ -893,8 +895,13 @@ def main():
                 param.set_dtype(dtype)
 
     if training_args.bf16:
+        logger.info('training dtype: bf16')
         _convert_half(model, dtype=ms.bfloat16)
-        model = amp.auto_mixed_precision(model, "O2", dtype=ms.bfloat16)
+        black_list = amp.get_black_list()
+        if mode == 1:
+            # A lower loss decreasing rate is observed at pynative mode if w/o mlp and attention in black list
+            black_list += [Qwen2MLP, Qwen2Attention]
+        model = amp.custom_mixed_precision(model, black_list=black_list, dtype=ms.bfloat16)
     elif training_args.fp16:
         _convert_half(model, dtype=ms.float16)
         model = amp.auto_mixed_precision(model, "O2", dtype=ms.float16)
